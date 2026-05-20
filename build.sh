@@ -132,6 +132,12 @@ if [[ "$DTB_OPTION" == "y" ]]; then
 	DTBS=y
 fi
 
+# Prefer the bundled Neutron clang toolchain (includes llvm-ar/llvm-nm).
+TOOLCHAIN_BIN="$PWD/toolchain/neutron_18/bin"
+if [ -d "$TOOLCHAIN_BIN" ]; then
+    export PATH="$TOOLCHAIN_BIN:$PATH"
+fi
+
 rm -rf build/out/$MODEL
 mkdir -p build/out/$MODEL/zip/files
 mkdir -p build/out/$MODEL/zip/META-INF/com/google/android
