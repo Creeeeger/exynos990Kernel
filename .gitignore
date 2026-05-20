@@ -85,6 +85,7 @@ modules.builtin
 !.mailmap
 !.cocciconfig
 !.clang-format
+!.github
 
 #
 # Generated include files
@@ -131,3 +132,11 @@ all.config
 
 # Kdevelop4
 *.kdev4
+
+# fetched Android config fragments
+kernel/configs/android-*.cfg
+
+# local build outputs/toolchains
+/build/out/
+/out/
+/toolchain/
