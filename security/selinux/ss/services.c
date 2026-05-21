@@ -69,6 +69,10 @@
 #include "xfrm.h"
 #include "ebitmap.h"
 #include "audit.h"
+#ifdef CONFIG_KDP_CRED
+#include <linux/uh.h>
+#include <linux/kdp.h>
+#endif
 
 /* Policy capability names */
 const char *selinux_policycap_names[__POLICYDB_CAPABILITY_MAX] = {
@@ -81,6 +85,11 @@ const char *selinux_policycap_names[__POLICYDB_CAPABILITY_MAX] = {
 };
 
 static struct selinux_ss selinux_ss;
+#if (defined CONFIG_KDP_CRED && defined CONFIG_SAMSUNG_PRODUCT_SHIP)
+int ss_initialized __kdp_ro;
+#else
+int ss_initialized; // SEC_SELINUX_PORTING_COMMON Change to use RKP
+#endif
 
 void selinux_ss_init(struct selinux_ss **ss)
 {
@@ -750,7 +759,11 @@ out:
 	kfree(n);
 	kfree(t);
 
-	if (!enforcing_enabled(state))
+// [ SEC_SELINUX_PORTING_COMMON
+#ifdef CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE
+	enforcing_set(state, 1);
+#endif
+	if (!enforcing_enabled(state)) // SEC_SELINUX_PORTING_COMMON Change to use RKP
 		return 0;
 	return -EPERM;
 }
@@ -1647,7 +1660,12 @@ out:
 	kfree(s);
 	kfree(t);
 	kfree(n);
-	if (!enforcing_enabled(state))
+
+// [ SEC_SELINUX_PORTING_COMMON
+#ifdef CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE
+	enforcing_set(state, 1);
+#endif
+	if (!enforcing_enabled(state)) // SEC_SELINUX_PORTING_COMMON Change to use RKP
 		return 0;
 	return -EACCES;
 }
@@ -1945,7 +1963,11 @@ static inline int convert_context_handle_invalid_context(
 	char *s;
 	u32 len;
 
-	if (enforcing_enabled(state))
+// [ SEC_SELINUX_PORTING_COMMON 
+#ifdef CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE
+	enforcing_set(state, 1);
+#endif
+	if (enforcing_enabled(state)) // SEC_SELINUX_PORTING_COMMON Change to use RKP
 		return -EINVAL;
 
 	if (!context_struct_to_string(policydb, context, &s, &len)) {
@@ -2191,6 +2213,11 @@ int security_load_policy(struct selinux_state *state, void *data, size_t len)
 		state->ss->sidtab = newsidtab;
 		security_load_policycaps(state);
 		state->initialized = 1;
+#if (defined CONFIG_KDP_CRED && defined CONFIG_SAMSUNG_PRODUCT_SHIP)
+		uh_call(UH_APP_KDP, RKP_KDP_X60, (u64)&ss_initialized, 1, 0, 0);
+#else
+		ss_initialized = 1; // SEC_SELINUX_PORTING_COMMON Change to use RKP 
+#endif
 		seqno = ++state->ss->latest_granting;
 		selinux_complete_init();
 		avc_ss_reset(state->avc, seqno);
