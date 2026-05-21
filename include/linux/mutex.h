@@ -63,6 +63,12 @@ struct mutex {
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	struct lockdep_map	dep_map;
 #endif
+#ifdef CONFIG_FAST_TRACK
+	struct task_struct 	*ftt_dep_task;
+#endif
+#ifdef CONFIG_KPERFMON
+	unsigned long		time;
+#endif
 };
 
 /*
