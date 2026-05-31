@@ -25,7 +25,7 @@ import binascii
 import multiprocessing
 import math
 import tempfile
-import pipes
+import shlex
 
 # NOTE: must be kept in sync with macro definitions in init/hyperdrive.S
 RRX_DEFAULT = 16
@@ -60,7 +60,8 @@ def _zbits(x):
         n += 1
     return n
 
-# Use CROSS_COMPILE provided to kernel make command.
+# Use the tools selected by Kbuild, falling back to CROSS_COMPILE for older
+# build environments.
 devnull = open('/dev/null', 'w')
 def which(executable):
     return subprocess.Popen(['which', executable], stdout=devnull).wait() == 0
@@ -70,17 +71,19 @@ Here comes the ugly part
 For SLSI kernel, CROSS_COMPILE contains the whole path
 For QC kernel, CROSS_COMPILE only have aarch64-linux-android-
 '''
-CROSS_COMPILE = os.environ.get('CROSS_COMPILE')
-assert CROSS_COMPILE is not None
-
-OBJDUMP = CROSS_COMPILE+"objdump"
-NM = CROSS_COMPILE+"nm"
+CROSS_COMPILE = os.environ.get('CROSS_COMPILE', '')
+OBJDUMP = os.environ.get('OBJDUMP') or CROSS_COMPILE+"objdump"
+NM = os.environ.get('NM') or CROSS_COMPILE+"nm"
+READELF = os.environ.get('READELF') or CROSS_COMPILE+"readelf"
 
 if (os.path.isfile(OBJDUMP) is False) and (not which(OBJDUMP)):
     raise RuntimeError(OBJDUMP+" does NOT contain full path and it is not in PATH"+"  PATH="+os.environ.get('PATH'))
 
 if (os.path.isfile(NM) is False) and (not which(NM)):
     raise RuntimeError(NM+" does NOT contain full path and it is not in PATH"+"  PATH="+os.environ.get('PATH'))
+
+if (os.path.isfile(READELF) is False) and (not which(READELF)):
+    raise RuntimeError(READELF+" does NOT contain full path and it is not in PATH"+"  PATH="+os.environ.get('PATH'))
 
 hex_re = r'(?:[a-f0-9]+)'
 virt_addr_re = re.compile(r'^(?P<virt_addr>{hex_re}):\s+'.format(hex_re=hex_re))
@@ -152,7 +155,7 @@ def skip_func(func, skip, skip_asm):
            func in skip
 
 def parse_last_insn(objdump, i, n):
-    return [objdump.parse_insn(j) if objdump.is_insn(j) else None for j in xrange(i-n, i)]
+    return [objdump.parse_insn(j) if objdump.is_insn(j) else None for j in range(i-n, i)]
 
 def instrument(objdump, func=None, skip=set([]), skip_stp=set([]), skip_asm=set([]), skip_blr=set([]), keep_magic=set([]), threads=1):
     """
@@ -184,7 +187,7 @@ def instrument(objdump, func=None, skip=set([]), skip_stp=set([]), skip_asm=set(
     def __instrument(func=None, start_func=None, end_func=None, start_i=None, end_i=None,
             tid=None):
         def parse_insn_range(i, r):
-            return [objdump.parse_insn(j) if objdump.is_insn(j) else None for j in xrange(i, r)]
+            return [objdump.parse_insn(j) if objdump.is_insn(j) else None for j in range(i, r)]
 
         #
         # Instrumentation of function prologues.
@@ -365,7 +368,7 @@ class Objdump(object):
         os.close(fd)
 
         subprocess.check_call("{OBJDUMP} -d {vmlinux} > {tmp}".format(
-            OBJDUMP=OBJDUMP, vmlinux=pipes.quote(self.vmlinux), tmp=pipes.quote(tmp)), shell=True)
+            OBJDUMP=OBJDUMP, vmlinux=shlex.quote(self.vmlinux), tmp=shlex.quote(tmp)), shell=True)
 
         # NOTE: DON'T MOVE THIS.
         # We are adding to the objdump output symbols from the data section.
@@ -582,7 +585,7 @@ class Objdump(object):
         if len(i_set) != 1 and i is None:
             raise RuntimeError("{func} occurs multiple times in vmlinux, specify which line from objdump you want ({i_set})".format(**locals()))
         elif i is None:
-            i = iter(i_set).next()
+            i = next(iter(i_set))
         else:
             assert i in i_set
         return i
@@ -774,7 +777,7 @@ class Objdump(object):
         [ ("func_1", 0), ("func_2", 1), ... ]
         """
         def __funcs():
-            for func, i_set in self.func_idx.iteritems():
+            for func, i_set in self.func_idx.items():
                 for i in i_set:
                     yield func, i
         funcs = list(__funcs())
@@ -792,7 +795,7 @@ class Objdump(object):
         def idx(i):
             return self._funcs[i][1]
         while lo <= hi:
-            mi = (hi + lo)/2
+            mi = (hi + lo) // 2
             if i < idx(mi):
                 hi = mi-1
             elif i > idx(mi):
@@ -880,7 +883,7 @@ class Objdump(object):
                 return self.line(i) if raw_line else self.parse_insn(i)
             return to_yield
 
-        for i in xrange(i, min(end, len(self.lines) - 1) + 1):
+        for i in range(i, min(end, len(self.lines) - 1) + 1):
 
             to_yield = None
 
@@ -917,7 +920,7 @@ class Objdump(object):
         i = 0
         funcs = self.funcs()
         chunk = int(math.ceil(len(funcs)/float(threads)))
-        for n in xrange(threads):
+        for n in range(threads):
             start_func_idx = i
             end_func_idx = min(i+chunk-1, len(funcs)-1)
             start_i = funcs[start_func_idx][1]
@@ -948,10 +951,11 @@ def each_procline(proc):
     """
     while True:
         line = proc.stdout.readline()
-        if line != '':
-            yield line.rstrip()
-        else:
+        if not line:
             break
+        if isinstance(line, bytes):
+            line = line.decode()
+        yield line.rstrip()
 
 """
 Replace an instruction with a new one.
@@ -1032,7 +1036,7 @@ def parse_nm(vmlinux, symbols=None):
         m = re.search(NM_RE, line)
         if m:
             if last_symbol is not None and ( symbols is None or last_name in symbols ):
-                last_symbol[NE_SIZE] = ( _int(m.group('addr')) - _int(last_symbol[NE_ADDR]) ) / BYTES_PER_INSN \
+                last_symbol[NE_SIZE] = ( _int(m.group('addr')) - _int(last_symbol[NE_ADDR]) ) // BYTES_PER_INSN \
                             if \
                                 re.match(hex_re, last_symbol[NE_ADDR]) and \
                                 re.match(hex_re, m.group('addr')) \
@@ -1051,69 +1055,37 @@ def addr_to_section(hexaddr, sections):
 
 def parse_sections(vmlinux):
     """
-    [Nr] Name              Type             Address           Offset
-         Size              EntSize          Flags  Link  Info  Align
-    [ 0]                   NULL             0000000000000000  00000000
-         0000000000000000  0000000000000000           0     0     0
-    [ 1] .head.text        PROGBITS         ffffffc000205000  00005000
-         0000000000000500  0000000000000000  AX       0     0     64
+    [Nr] Name        Type       Address          Off    Size
+    [ 1] .head.text  PROGBITS   ffffffc000205000 005000 000500
     {
       'name': '.head.text',
-      'size': 0,
-      'type': PROGBITS,
+      'size': 1280,
+      'type': 'PROGBITS',
       ...
     }
     """
-    proc = subprocess.Popen([OBJDUMP, '--section-headers', vmlinux], stdout=subprocess.PIPE)
+    proc = subprocess.Popen([READELF, '--sections', '--wide', vmlinux], stdout=subprocess.PIPE)
     f = each_procline(proc)
     d = {
         'sections': [],
         'section_idx': {},
     }
-    it = iter(f)
-    section_idx = 0
-    while True:
-        try:
-            line = it.next()
-        except StopIteration:
-            break
-
-        m = re.search(r'^Sections:', line)
-        if m:
-            # first section
-            it.next()
-            continue
-
+    for line in f:
         m = re.search((
-            # [Nr] Name              Type             Address           Offset
-            r'^\s*(?P<number>\d+)'
-            r'\s+(?P<name>[^\s]*)'
-            r'\s+(?P<size>{hex_re})'
+            r'^\s*\[\s*(?P<number>\d+)\]\s+'
+            r'(?P<name>[^\s]+)'
+            r'\s+(?P<type>[^\s]+)'
             r'\s+(?P<address>{hex_re})'
-            r'\s+(?P<lma>{hex_re})'
             r'\s+(?P<offset>{hex_re})'
-            r'\s+(?P<align>[^\s]+)'
+            r'\s+(?P<size>{hex_re})'
             ).format(hex_re=hex_re), line)
         if m:
-            section = {}
-
-            d['section_idx'][m.group('name')] = int(m.group('number'))
-
-            def parse_power(x):
-                m = re.match(r'(?P<base>\d+)\*\*(?P<exponent>\d+)', x)
-                return int(m.group('base'))**int(m.group('exponent'))
-            section.update(coerce(m.groupdict(), [
+            section = coerce(m.groupdict(), [
                 [_int, ['size', 'address', 'offset', 'lma']],
                 [int, ['number']],
-                [parse_power, ['align']]]))
-
-            line = it.next()
-            # CONTENTS, ALLOC, LOAD, READONLY, CODE
-            m = re.search((
-            r'\s+(?P<type>.*)'
-            ).format(hex_re=hex_re), line)
-            section.update(m.groupdict())
-
+                ])
+            section['lma'] = section['address']
+            d['section_idx'][section['name']] = len(d['sections'])
             d['sections'].append(section)
 
     return d
@@ -1242,10 +1214,10 @@ def to_twos_compl(x, nbits):
     return x
 
 def byte_string(xs):
-    if type(xs) == list:
-        return ''.join(xs)
-    elif type(xs) in [int, long]:
-        return ''.join([chr((xs >> 8*i) & 0xff) for i in xrange(3, -1, 0-1)])
+    if isinstance(xs, list):
+        return bytes(xs)
+    elif isinstance(xs, int):
+        return bytes((xs >> 8*i) & 0xff for i in range(3, -1, -1))
     return xs
 def hexint(b):
     return int(binascii.hexlify(byte_string(b)), 16)
@@ -1303,7 +1275,7 @@ if common.run_from_ipython():
     #import pdb; pdb.set_trace()
     o = load_and_cache_objdump(sample_vmlinux_file, config_file=sample_config_file)
 
-    print "in function common.run_from_ipython()"
+    print("in function common.run_from_ipython()")
 
     def _instrument(func=None, skip=common.skip, validate=True, threads=DEFAULT_THREADS):
         instrument(o, func=func, skip=common.skip, skip_stp=common.skip_stp, skip_asm=common.skip_asm, threads=threads)

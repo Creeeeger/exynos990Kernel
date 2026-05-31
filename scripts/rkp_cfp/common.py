@@ -15,10 +15,7 @@ ident_re = r'(?:[a-zA-Z_][a-zA-Z0-9_]*)'
 ident_rec = re.compile(ident_re)
 
 class MyPrettyPrinter(pprint.PrettyPrinter):
-    def format(self, object, context, maxlevels, level):
-        if isinstance(object, unicode):
-            return (object.encode('utf8'), True, False)
-        return pprint.PrettyPrinter.format(self, object, context, maxlevels, level)
+    pass
 
 _printer = MyPrettyPrinter()
 def pr(x):
@@ -164,7 +161,8 @@ skip_magic=set([
     'set_security_override_from_ctx',
     ])
 
-func_file = './scripts/rkp_cfp/addr_taken_func';
+func_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         'addr_taken_func')
 keep_magic= set([])
 
 if os.path.isfile(func_file):
@@ -173,5 +171,5 @@ if os.path.isfile(func_file):
         for line in f:
             keep_magic.add(line.strip())
 else:
-    print "Skipping ", func_file
+    print("Skipping ", func_file)
        

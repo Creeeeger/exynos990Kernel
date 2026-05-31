@@ -1238,13 +1238,16 @@ vfs_kern_mount(struct file_system_type *type, int flags, const char *name, void 
 			return ERR_PTR(-ENOMEM);
 		}
 	}
-	if (flags & SB_KERNMOUNT)
+	if (flags & SB_KERNMOUNT) {
 #ifdef CONFIG_KDP_NS
 		rkp_set_mnt_flags(mnt->mnt, MNT_INTERNAL);
-		root = mount_fs(type, flags, name, mnt->mnt, data);
 #else
 		mnt->mnt.mnt_flags = MNT_INTERNAL;
-
+#endif
+	}
+#ifdef CONFIG_KDP_NS
+	root = mount_fs(type, flags, name, mnt->mnt, data);
+#else
 	root = mount_fs(type, flags, name, &mnt->mnt, data);
 #endif
 	if (IS_ERR(root)) {
@@ -2134,7 +2137,7 @@ static int can_umount(const struct path *path, int flags)
 		 return -EINVAL;
 	 if (!check_mnt(mnt))
 		 return -EINVAL;
-	 if (mnt->mnt.mnt_flags & MNT_LOCKED)
+	 if (path->mnt->mnt_flags & MNT_LOCKED)
 		 return -EINVAL;
 	 if (flags & MNT_FORCE && !capable(CAP_SYS_ADMIN))
 		 return -EPERM;

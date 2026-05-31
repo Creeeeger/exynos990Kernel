@@ -446,7 +446,7 @@ if common.run_from_ipython():
             first_4bits = int(addr[0], 16)
             first_byte_of_key = (0xf ^ first_4bits) << 4 | (0xf ^ first_4bits)
             key = 0
-            for i in xrange(0, 8):
+            for i in range(0, 8):
                 key |= first_byte_of_key << i*8
             return {'decaddr':'0x' + instrument._hex(instrument._int(addr) ^ key),
                     'key':'0x' + instrument._hex(key)}
