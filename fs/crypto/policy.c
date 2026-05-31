@@ -655,6 +655,41 @@ int fscrypt_inherit_context(struct inode *parent, struct inode *child,
 	ctxsize = fscrypt_new_context_from_policy(&ctx, &ci->ci_policy);
 
 	BUILD_BUG_ON(sizeof(ctx) != FSCRYPT_SET_CONTEXT_MAX_SIZE);
+#if defined(CONFIG_DDAR) || defined(CONFIG_FSCRYPT_SDP)
+	if (ctx.version == FSCRYPT_CONTEXT_V1)
+		ctx.v1.knox_flags = 0;
+
+#ifdef CONFIG_DDAR
+	if (ctx.version == FSCRYPT_CONTEXT_V1) {
+		res = dd_test_and_inherit_context(&ctx.v1, parent, child, ci,
+						  fs_data);
+		if (res) {
+			dd_error("failed to inherit dd policy\n");
+			return res;
+		}
+	}
+#endif
+
+#ifdef CONFIG_FSCRYPT_SDP
+	if (ctx.version == FSCRYPT_CONTEXT_V1) {
+		res = fscrypt_sdp_inherit_context(parent, child, &ctx.v1,
+						  fs_data);
+		if (res) {
+			printk_once(KERN_WARNING
+				    "%s: Failed to set sensitive ongoing flag (err:%d)\n",
+				    __func__, res);
+			return res;
+		}
+	}
+#endif
+
+	if (ctx.version == FSCRYPT_CONTEXT_V1) {
+		if (ctx.v1.knox_flags != 0)
+			ctxsize = sizeof(ctx.v1);
+		else
+			ctxsize = offsetof(struct fscrypt_context_v1, knox_flags);
+	}
+#endif
 	res = parent->i_sb->s_cop->set_context(child, &ctx, ctxsize, fs_data);
 	if (res)
 		return res;

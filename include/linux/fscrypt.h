@@ -62,6 +62,12 @@ struct fscrypt_operations {
 	int (*get_context)(struct inode *inode, void *ctx, size_t len);
 	int (*set_context)(struct inode *inode, const void *ctx, size_t len,
 			   void *fs_data);
+#if defined(CONFIG_DDAR) || defined(CONFIG_FSCRYPT_SDP)
+	int (*get_knox_context)(struct inode *inode, const char *name,
+				void *ctx, size_t len);
+	int (*set_knox_context)(struct inode *inode, const char *name,
+				const void *ctx, size_t len, void *fs_data);
+#endif
 	const union fscrypt_context *(*get_dummy_context)(
 		struct super_block *sb);
 	bool (*empty_dir)(struct inode *inode);
@@ -213,6 +219,29 @@ int fscrypt_get_encryption_info(struct inode *inode);
 void fscrypt_put_encryption_info(struct inode *inode);
 void fscrypt_free_inode(struct inode *inode);
 int fscrypt_drop_inode(struct inode *inode);
+#ifdef CONFIG_FSCRYPT_SDP
+int fscrypt_get_encryption_key(struct inode *inode, struct fscrypt_key *key);
+int fscrypt_get_encryption_key_classified(struct inode *inode,
+					  struct fscrypt_key *key);
+int fscrypt_get_encryption_kek(struct inode *inode,
+			      struct fscrypt_info *crypt_info,
+			      struct fscrypt_key *kek);
+#endif
+
+#ifdef CONFIG_DDAR
+int fscrypt_dd_decrypt_page(struct inode *inode, struct page *page);
+int fscrypt_dd_encrypted(struct bio *bio);
+int fscrypt_dd_encrypted_inode(const struct inode *inode);
+int fscrypt_dd_is_traced_inode(const struct inode *inode);
+void fscrypt_dd_trace_inode(const struct inode *inode);
+long fscrypt_dd_get_ino(struct bio *bio);
+long fscrypt_dd_ioctl(unsigned int cmd, unsigned long *arg,
+		      struct inode *inode);
+int fscrypt_dd_submit_bio(struct inode *inode, struct bio *bio);
+int fscrypt_dd_may_submit_bio(struct bio *bio);
+struct inode *fscrypt_bio_get_inode(const struct bio *bio);
+bool fscrypt_dd_can_merge_bio(struct bio *bio, struct address_space *mapping);
+#endif
 
 /* fname.c */
 int fscrypt_setup_filename(struct inode *inode, const struct qstr *iname,

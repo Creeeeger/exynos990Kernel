@@ -52,3 +52,7 @@ obj-$(CONFIG_GAF)    += proca/gaf/
 
 # HDM driver
 obj-$(CONFIG_HDM)			+= hdm/
+
+# Knox SDP
+obj-$(CONFIG_SDP) += sdp/
+obj-$(CONFIG_SDP) += sdp/built-in.a

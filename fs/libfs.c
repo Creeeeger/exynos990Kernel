@@ -18,6 +18,7 @@
 #include <linux/buffer_head.h> /* sync_mapping_buffers */
 #include <linux/unicode.h>
 #include <linux/fscrypt.h>
+#include <linux/fscrypto_sdp_cache.h>
 
 #include <linux/uaccess.h>
 
@@ -1357,8 +1358,18 @@ static const struct dentry_operations generic_ci_dentry_ops = {
 #endif
 
 #ifdef CONFIG_FS_ENCRYPTION
+#ifdef CONFIG_FSCRYPT_SDP
+static int fscrypt_sdp_d_delete(const struct dentry *dentry)
+{
+	return fscrypt_sdp_d_delete_wrapper(dentry);
+}
+#endif
+
 static const struct dentry_operations generic_encrypted_dentry_ops = {
 	.d_revalidate = fscrypt_d_revalidate,
+#ifdef CONFIG_FSCRYPT_SDP
+	.d_delete = fscrypt_sdp_d_delete,
+#endif
 };
 #endif
 
@@ -1367,6 +1378,9 @@ static const struct dentry_operations generic_encrypted_ci_dentry_ops = {
 	.d_hash = generic_ci_d_hash,
 	.d_compare = generic_ci_d_compare,
 	.d_revalidate = fscrypt_d_revalidate,
+#ifdef CONFIG_FSCRYPT_SDP
+	.d_delete = fscrypt_sdp_d_delete,
+#endif
 };
 #endif
 

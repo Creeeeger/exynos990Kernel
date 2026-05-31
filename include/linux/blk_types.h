@@ -216,6 +216,9 @@ struct bio {
 
 	ANDROID_KABI_RESERVE(1);
 	ANDROID_KABI_RESERVE(2);
+#ifdef CONFIG_DDAR
+	struct inode		*bi_dio_inode;
+#endif
 
 	/*
 	 * We can inline a number of vecs at the end of the bio, to avoid
