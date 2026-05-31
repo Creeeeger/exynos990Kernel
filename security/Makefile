@@ -52,4 +52,3 @@ obj-$(CONFIG_GAF)    += proca/gaf/
 
 # HDM driver
 obj-$(CONFIG_HDM)			+= hdm/
-

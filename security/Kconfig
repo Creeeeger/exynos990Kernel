@@ -239,6 +239,8 @@ source security/tomoyo/Kconfig
 source security/apparmor/Kconfig
 source security/loadpin/Kconfig
 source security/yama/Kconfig
+source security/safesetid/Kconfig
+source security/lockdown/Kconfig
 source security/mstdrv/Kconfig
 source security/hdm/Kconfig
 
@@ -288,4 +290,3 @@ config DEFAULT_SECURITY
 source "security/Kconfig.hardening"
 
 endmenu
-
