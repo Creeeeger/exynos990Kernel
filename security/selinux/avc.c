@@ -34,6 +34,12 @@
 #include "avc_ss.h"
 #include "classmap.h"
 
+// [ SEC_SELINUX_PORTING_COMMON
+#ifdef SEC_SELINUX_DEBUG
+#include <linux/signal.h>
+#endif
+// ] SEC_SELINUX_PORTING_COMMON
+
 #define AVC_CACHE_SLOTS			512
 #define AVC_DEF_CACHE_THRESHOLD		512
 #define AVC_CACHE_RECLAIM		16
@@ -1019,7 +1025,7 @@ static noinline int avc_denied(struct selinux_state *state,
 	if (flags & AVC_STRICT)
 		return -EACCES;
 
-	if (enforcing_enabled(state) &&
+	if (selinux_enforcing &&
 	    !(avd->flags & AVD_FLAGS_PERMISSIVE))
 		return -EACCES;
 
