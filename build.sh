@@ -18,6 +18,7 @@ Options:
     -k, --ksu [y/N]        Include KernelSU
     -r, --recovery [y/N]   Compile kernel for an Android Recovery
     -d, --dtbs [y/N]	   Compile only DTBs
+    -p, --dpolicy [path]   Include the primary DEFEX policy in the boot ramdisk
 EOF
 }
 
@@ -37,6 +38,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dtbs|-d)
             DTB_OPTION="$2"
+            shift 2
+            ;;
+        --dpolicy|-p)
+            DPOLICY_PATH="$2"
             shift 2
             ;;
         *)\
@@ -166,6 +171,15 @@ echo "Generating configuration file..."
 echo "-----------------------------------------------"
 make ${MAKE_ARGS} -j$CORES exynos9830_defconfig $MODEL.config $KSU $RECOVERY || abort
 
+if [ -z "$RECOVERY" ] && [ -z "$DTBS" ] && grep -q '^CONFIG_SECURITY_DEFEX=y$' out/.config; then
+    if [ -z "$DPOLICY_PATH" ] || [ ! -f "$DPOLICY_PATH" ]; then
+        echo "-----------------------------------------------"
+        echo "DEFEX is enabled but no valid --dpolicy file was provided."
+        echo "-----------------------------------------------"
+        abort
+    fi
+fi
+
 if [ ! -z "$DTBS" ]; then
     MAKE_ARGS="$MAKE_ARGS dtbs"
     echo "Building DTBs"
@@ -214,8 +228,14 @@ if [ -z "$RECOVERY" ] && [ -z "$DTBS" ]; then
     # Build ramdisk
     echo "Building RAMDisk..."
     echo "-----------------------------------------------"
-    pushd build/ramdisk > /dev/null
-     find . ! -name . | LC_ALL=C sort | cpio -o -H newc -R root:root | gzip > ../out/$MODEL/ramdisk.cpio.gz || abort
+    RAMDISK_DIR=build/out/$MODEL/ramdisk
+    rm -rf "$RAMDISK_DIR"
+    cp -a build/ramdisk "$RAMDISK_DIR"
+    if [ -n "$DPOLICY_PATH" ]; then
+        install -m 0644 "$DPOLICY_PATH" "$RAMDISK_DIR/dpolicy"
+    fi
+    pushd "$RAMDISK_DIR" > /dev/null
+     find . ! -name . | LC_ALL=C sort | cpio -o -H newc -R root:root | gzip > ../ramdisk.cpio.gz || abort
     popd > /dev/null
     echo "-----------------------------------------------"
 
