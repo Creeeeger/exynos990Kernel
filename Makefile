@@ -304,7 +304,8 @@ include scripts/Kbuild.include
 # Read KERNELRELEASE from include/config/kernel.release (if it exists)
 KERNELRELEASE = $(shell cat include/config/kernel.release 2> /dev/null)
 KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if $(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)
-export VERSION PATCHLEVEL SUBLEVEL KERNELRELEASE KERNELVERSION
+KERNELRELEASE_OVERRIDE = 4.19.87-27102101
+export VERSION PATCHLEVEL SUBLEVEL KERNELRELEASE KERNELVERSION KERNELRELEASE_OVERRIDE
 
 include scripts/subarch.include
 
@@ -1173,8 +1174,8 @@ $(vmlinux-dirs): prepare scripts
 	$(Q)$(MAKE) $(build)=$@ need-builtin=1
 
 define filechk_kernel.release
-	echo "$(KERNELVERSION)$$($(CONFIG_SHELL) $(srctree)/scripts/setlocalversion \
-		$(srctree) $(BRANCH) $(KMI_GENERATION))"
+	echo "$(if $(KERNELRELEASE_OVERRIDE),$(KERNELRELEASE_OVERRIDE),$(KERNELVERSION)$$($(CONFIG_SHELL) $(srctree)/scripts/setlocalversion \
+		$(srctree) $(BRANCH) $(KMI_GENERATION)))"
 endef
 
 # Store (new) KERNELRELEASE string in include/config/kernel.release
@@ -1766,8 +1767,8 @@ checkstack:
 	$(PERL) $(src)/scripts/checkstack.pl $(CHECKSTACK_ARCH)
 
 kernelrelease:
-	@echo "$(KERNELVERSION)$$($(CONFIG_SHELL) $(srctree)/scripts/setlocalversion \
-		$(srctree) $(BRANCH) $(KMI_GENERATION))"
+	@echo "$(if $(KERNELRELEASE_OVERRIDE),$(KERNELRELEASE_OVERRIDE),$(KERNELVERSION)$$($(CONFIG_SHELL) $(srctree)/scripts/setlocalversion \
+		$(srctree) $(BRANCH) $(KMI_GENERATION)))"
 
 kernelversion:
 	@echo $(KERNELVERSION)
