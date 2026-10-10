@@ -2559,7 +2559,8 @@ do_steal:
  * trace as intended by the page allocation.
  */
 static __always_inline struct page *
-__rmqueue(struct zone *zone, unsigned int order, int migratetype)
+__rmqueue(struct zone *zone, unsigned int order, int migratetype,
+	  unsigned int alloc_flags)
 {
 	struct page *page = NULL;
 
@@ -2568,7 +2569,8 @@ __rmqueue(struct zone *zone, unsigned int order, int migratetype)
 #else
 	if (migratetype == MIGRATE_MOVABLE) {
 #endif
-		page = __rmqueue_cma_fallback(zone, order);
+		if (alloc_flags & ALLOC_CMA)
+			page = __rmqueue_cma_fallback(zone, order);
 		if(page)
 			return page; // if not returned then results in memleak
 		// revisit
@@ -2578,7 +2580,7 @@ __rmqueue(struct zone *zone, unsigned int order, int migratetype)
 retry:
 	page = __rmqueue_smallest(zone, order, migratetype);
 	if (unlikely(!page)) {
-		if (migratetype == MIGRATE_MOVABLE)
+		if (migratetype == MIGRATE_MOVABLE && (alloc_flags & ALLOC_CMA))
 			page = __rmqueue_cma_fallback(zone, order);
 
 		if (!page && __rmqueue_fallback(zone, order, migratetype))
@@ -2601,13 +2603,13 @@ static inline struct page *__rmqueue_cma(struct zone *zone, unsigned int order)
  */
 static int rmqueue_bulk(struct zone *zone, unsigned int order,
 			unsigned long count, struct list_head *list,
-			int migratetype)
+			int migratetype, unsigned int alloc_flags)
 {
 	int i, alloced = 0;
 
 	spin_lock(&zone->lock);
 	for (i = 0; i < count; ++i) {
-		struct page *page = __rmqueue(zone, order, migratetype);
+		struct page *page = __rmqueue(zone, order, migratetype, alloc_flags);
 		if (unlikely(page == NULL))
 			break;
 
@@ -3088,7 +3090,7 @@ static inline void zone_statistics(struct zone *preferred_zone, struct zone *z)
 /* Remove page from the per-cpu list, caller must protect the list */
 static struct page *__rmqueue_pcplist(struct zone *zone, int migratetype,
 			struct per_cpu_pages *pcp,
-			struct list_head *list)
+			struct list_head *list, unsigned int alloc_flags)
 {
 	struct page *page = NULL;
 
@@ -3096,7 +3098,7 @@ static struct page *__rmqueue_pcplist(struct zone *zone, int migratetype,
 		if (list_empty(list)) {
 			pcp->count += rmqueue_bulk(zone, 0,
 					pcp->batch, list,
-					migratetype);
+					migratetype, alloc_flags);
 			if (unlikely(list_empty(list)))
 				return NULL;
 		}
@@ -3119,7 +3121,8 @@ static struct page *__rmqueue_pcplist(struct zone *zone, int migratetype,
 		 * MIGRATE_MOVABLE.
 		 */
 #ifdef CONFIG_CMA
-		if (is_migrate_cma_page(page) && (migratetype != MIGRATE_CMA))
+		if (is_migrate_cma_page(page) &&
+		    (!(alloc_flags & ALLOC_CMA) || migratetype != MIGRATE_CMA))
 			return NULL;
 #endif
 		list_del(&page->lru);
@@ -3144,7 +3147,7 @@ static struct page *rmqueue_pcplist(struct zone *preferred_zone,
 	local_irq_save(flags);
 	pcp = &this_cpu_ptr(zone->pageset)->pcp;
 	list = &pcp->lists[migratetype];
-	page = __rmqueue_pcplist(zone,  migratetype_rmqueue, pcp, list);
+	page = __rmqueue_pcplist(zone, migratetype_rmqueue, pcp, list, alloc_flags);
 	if (page) {
 		__count_zid_vm_events(PGALLOC, page_zonenum(page), 1 << order);
 		zone_statistics(preferred_zone, zone);
@@ -3167,7 +3170,8 @@ struct page *rmqueue(struct zone *preferred_zone,
 	int migratetype_rmqueue = migratetype;
 
 #ifdef CONFIG_CMA
-	if ((migratetype_rmqueue == MIGRATE_MOVABLE) &&
+	if ((alloc_flags & ALLOC_CMA) &&
+	    (migratetype_rmqueue == MIGRATE_MOVABLE) &&
 	    ((gfp_flags & GFP_HIGHUSER_MOVABLE) == GFP_HIGHUSER_MOVABLE))
 		migratetype_rmqueue = MIGRATE_CMA;
 #endif
@@ -3207,7 +3211,7 @@ struct page *rmqueue(struct zone *preferred_zone,
 				trace_mm_page_alloc_zone_locked(page, order, migratetype);
 		}
 		if (!page)
-			page = __rmqueue(zone, order, migratetype_rmqueue);
+			page = __rmqueue(zone, order, migratetype_rmqueue, alloc_flags);
 	} while (page && check_new_pages(page, order));
 
 	spin_unlock(&zone->lock);
@@ -4121,8 +4125,9 @@ gfp_to_alloc_flags(gfp_t gfp_mask)
 		alloc_flags |= ALLOC_HARDER;
 
 #ifdef CONFIG_CMA
-	if ((gfpflags_to_migratetype(gfp_mask) == MIGRATE_MOVABLE) ||
-		((gfp_mask & GFP_HIGHUSER_MOVABLE) == GFP_HIGHUSER_MOVABLE))
+	if (!(gfp_mask & __GFP_NOCMA) &&
+	    ((gfpflags_to_migratetype(gfp_mask) == MIGRATE_MOVABLE) ||
+	     ((gfp_mask & GFP_HIGHUSER_MOVABLE) == GFP_HIGHUSER_MOVABLE)))
 		alloc_flags |= ALLOC_CMA;
 #endif
 	return alloc_flags;
@@ -4624,7 +4629,8 @@ static inline bool prepare_alloc_pages(gfp_t gfp_mask, unsigned int order,
 	if (should_fail_alloc_page(gfp_mask, order))
 		return false;
 
-	if (IS_ENABLED(CONFIG_CMA) && ac->migratetype == MIGRATE_MOVABLE)
+	if (IS_ENABLED(CONFIG_CMA) && ac->migratetype == MIGRATE_MOVABLE &&
+	    !(gfp_mask & __GFP_NOCMA))
 		*alloc_flags |= ALLOC_CMA;
 
 	return true;
