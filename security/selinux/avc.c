@@ -34,6 +34,10 @@
 #include "avc_ss.h"
 #include "classmap.h"
 
+#if defined(CONFIG_KSU) && defined(CONFIG_KSU_MANUAL_HOOK)
+extern void ksu_slow_avc_audit(u32 *tsid);
+#endif
+
 #define AVC_CACHE_SLOTS			512
 #define AVC_DEF_CACHE_THRESHOLD		512
 #define AVC_CACHE_RECLAIM		16
@@ -782,6 +786,11 @@ noinline int slow_avc_audit(struct selinux_state *state,
 	sad.denied = denied;
 	sad.result = result;
 	sad.state = state;
+
+#if defined(CONFIG_KSU) && defined(CONFIG_KSU_MANUAL_HOOK)
+	/* Hide KernelSU in audit output without patching protected kernel text. */
+	ksu_slow_avc_audit(&sad.tsid);
+#endif
 
 	a->selinux_audit_data = &sad;
 
