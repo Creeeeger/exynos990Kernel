@@ -184,6 +184,10 @@ if [ -z "$RECOVERY" ] && ! grep -q '^CONFIG_FORTIFY_SOURCE=y$' out/.config; then
     echo "Set KERNEL_TOOLCHAIN_BIN to the bin directory of a supported toolchain."
     abort
 fi
+if [ -z "$RECOVERY" ]; then
+    python3 scripts/check-security-config.py out/.config || abort
+fi
+
 if [ -z "$RECOVERY" ] && [ -z "$DTBS" ] && grep -q '^CONFIG_SECURITY_DEFEX=y$' out/.config; then
     if [ -z "$DPOLICY_PATH" ] || [ ! -f "$DPOLICY_PATH" ]; then
         echo "-----------------------------------------------"
@@ -228,18 +232,19 @@ OUTPUT_FILE=build/out/$MODEL/boot.img
 ## Build auxiliary boot.img files
 # Copy kernel to build
 if [ -z "$DTBS" ]; then
-    cp out/arch/arm64/boot/Image build/out/$MODEL
+    cp out/arch/arm64/boot/Image build/out/$MODEL || abort
+    cp out/.config build/out/$MODEL/kernel.config || abort
 fi
 
 # Build dtb
 echo "Building common exynos9830 Device Tree Blob Image..."
 echo "-----------------------------------------------"
-./toolchain/mkdtimg cfg_create build/out/$MODEL/dtb.img build/dtconfigs/exynos9830.cfg -d out/arch/arm64/boot/dts/exynos
+./toolchain/mkdtimg cfg_create build/out/$MODEL/dtb.img build/dtconfigs/exynos9830.cfg -d out/arch/arm64/boot/dts/exynos || abort
 
 # Build dtbo
 echo "Building Device Tree Blob Output Image for "$MODEL"..."
 echo "-----------------------------------------------"
-./toolchain/mkdtimg cfg_create build/out/$MODEL/dtbo.img build/dtconfigs/$MODEL.cfg -d out/arch/arm64/boot/dts/samsung
+./toolchain/mkdtimg cfg_create build/out/$MODEL/dtbo.img build/dtconfigs/$MODEL.cfg -d out/arch/arm64/boot/dts/samsung || abort
 
 if [ -z "$RECOVERY" ] && [ -z "$DTBS" ]; then
     # Build ramdisk
@@ -286,8 +291,9 @@ if [ -z "$RECOVERY" ] && [ -z "$DTBS" ]; then
     else
         NAME="$version"_"$MODEL"_UNOFFICIAL_"$DATE".zip
     fi
-    zip -r -qq ../"$NAME" .
+    zip -r -qq ../"$NAME" . || abort
     popd > /dev/null
+    (cd "build/out/$MODEL" && sha256sum Image kernel.config boot.img dtb.img dtbo.img "$NAME" > SHA256SUMS) || abort
 fi
 
 popd > /dev/null
