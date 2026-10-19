@@ -205,11 +205,11 @@ static DEFINE_MUTEX(selinux_sdcardfs_lock);
 
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP
 #if (defined CONFIG_KDP_CRED && defined CONFIG_SAMSUNG_PRODUCT_SHIP)
-static int selinux_enforcing_boot __kdp_ro;
-int selinux_enforcing __kdp_ro;
+static int selinux_enforcing_boot __kdp_ro = IS_ENABLED(CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE);
+int selinux_enforcing __kdp_ro = IS_ENABLED(CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE);
 #else
-static int selinux_enforcing_boot;
-int selinux_enforcing;
+static int selinux_enforcing_boot = IS_ENABLED(CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE);
+int selinux_enforcing = IS_ENABLED(CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE);
 #endif
 
 static int __init enforcing_setup(char *str)
@@ -217,7 +217,7 @@ static int __init enforcing_setup(char *str)
 	unsigned long enforcing;
 	if (!kstrtoul(str, 0, &enforcing)){
 // [ SEC_SELINUX_PORTING_COMMON
-#ifdef CONFIG_ALWAYS_ENFORCE
+#if defined(CONFIG_ALWAYS_ENFORCE) || defined(CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE)
 		selinux_enforcing_boot = 1;
 		selinux_enforcing = 1;
 #else
