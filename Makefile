@@ -860,6 +860,12 @@ DISABLE_LTO	:= $(DISABLE_LTO_CLANG)
 export LTO_CFLAGS DISABLE_LTO
 endif
 
+ifdef CONFIG_RKP_CFP_JOPP
+# Samsung's post-link JOPP pass needs one instruction before each C entry.
+# Stock Clang supports this without Samsung's obsolete compiler fork.
+KBUILD_CFLAGS += -fno-jump-tables -fpatchable-function-entry=1,1
+endif
+
 ifdef CONFIG_CFI_CLANG
 cfi-clang-flags	+= -fsanitize=cfi -fno-sanitize-cfi-canonical-jump-tables \
 		   -fno-sanitize-blacklist

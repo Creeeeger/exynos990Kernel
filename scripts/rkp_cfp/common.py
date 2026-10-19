@@ -91,6 +91,9 @@ skip_br=set([
     'cpu_resume_mmu' ])
 
 skip_blr=set([
+    # LLVM synthesizes __cfi_check after Clang's patchable-entry pass.
+    # This dispatcher calls the verifier selected by the kernel's CFI map.
+    'cfi_slowpath_handler',
     'stext',
     '__primary_switch',
     '__primary_switched',

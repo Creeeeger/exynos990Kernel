@@ -893,12 +893,26 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 
 	/* Now we know the actual image size. */
 	image_size = sizeof(u32) * ctx.idx;
+#ifdef CONFIG_RKP_CFP_JOPP
+	/* Reserve a checked entry marker outside the BPF instruction offsets.
+	 * Align the allocation so advancing past the marker cannot move the
+	 * entry onto the next page, where bpf_jit_binary_hdr() would be wrong.
+	 */
+	header = bpf_jit_binary_alloc(image_size + sizeof(u32), &image_ptr,
+				      16, jit_fill_hole);
+#else
 	header = bpf_jit_binary_alloc(image_size, &image_ptr,
 				      sizeof(u32), jit_fill_hole);
+#endif
 	if (header == NULL) {
 		prog = orig_prog;
 		goto out_off;
 	}
+
+#ifdef CONFIG_RKP_CFP_JOPP
+	*(__le32 *)image_ptr = cpu_to_le32(CONFIG_RKP_CFP_JOPP_MAGIC);
+	image_ptr += sizeof(u32);
+#endif
 
 	/* 2. Now, the actual pass. */
 

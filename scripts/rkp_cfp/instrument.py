@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Copyright (c) 2016 Samsung Electronics Co., Ltd.
 # Authors:	James Gleeson <jagleeso@gmail.com>
@@ -35,7 +35,7 @@ REG_FP = 29
 REG_LR = 30
 REG_SP = 31
 
-DEFAULT_THREADS = multiprocessing.cpu_count()
+DEFAULT_THREADS = min(8, multiprocessing.cpu_count())
 #DEFAULT_THREADS = 1
 
 BYTES_PER_INSN = 4
@@ -217,6 +217,8 @@ def instrument(objdump, func=None, skip=set([]), skip_stp=set([]), skip_asm=set(
             return skip_func(func, skip, skip_asm)
 
         last_func_i = [None]
+        marked_entries = 0
+        protected_calls = 0
         def each_insn():
             # Keep track of the last 2 instructions
             # (needed it for CONFIG_RKP_CFP_JOPP)
@@ -230,12 +232,14 @@ def instrument(objdump, func=None, skip=set([]), skip_stp=set([]), skip_asm=set(
                 # Instrument the nop just before the function.
                 magic_i, magic_insn = last_insns[0]
                 objdump.write(magic_i, objdump.JOPP_MAGIC)
+                marked_entries += 1
 
             if objdump.JOPP and insn['type'] == 'blr' and insn['args']['dst_reg'] < 31 and curfunc not in skip_blr :
                 springboard_blr = 'jopp_springboard_blr_x{register}'.format(register=insn['args']['dst_reg'])
                 insn = bl_insn(insn,
                         offset=objdump.func_offset(springboard_blr) - objdump.insn_offset(i))
                 objdump.write(i, objdump.encode_insn(insn))
+                protected_calls += 1
                 continue
             elif objdump.ROPP and curfunc not in skip_stp \
                     and insn['type'] == 'ldp' and \
@@ -292,6 +296,8 @@ def instrument(objdump, func=None, skip=set([]), skip_stp=set([]), skip_asm=set(
                 instrument_stp(curfunc, func_i, i, insn, stp_x29_RRX_frame, 0)
                 continue
         objdump.flush()
+        print("CFP worker {}: {} marked entries, {} protected indirect calls".format(
+            tid, marked_entries, protected_calls), flush=True)
 
     objdump.each_insn_parallel(__instrument, threads)
 
@@ -935,7 +941,10 @@ class Objdump(object):
             if threads == 1:
                 each_insn(**kwargs)
                 return
-            proc = multiprocessing.Process(target=each_insn, kwargs=kwargs)
+            # The workers share the mapped ELF and a nested instrumentation
+            # callback. Python 3.14 defaults to forkserver, which cannot pickle
+            # either; use the Linux fork context explicitly.
+            proc = multiprocessing.get_context("fork").Process(target=each_insn, kwargs=kwargs)
 
             i = end_func_idx + 1
             proc.start()
@@ -944,6 +953,8 @@ class Objdump(object):
                 break
         for proc in procs:
             proc.join()
+        if any(proc.exitcode != 0 for proc in procs):
+            raise RuntimeError("CFP instrumentation worker failed; refusing an incomplete kernel")
 
 def each_procline(proc):
     """
