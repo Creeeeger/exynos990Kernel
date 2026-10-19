@@ -59,14 +59,21 @@ done
 echo "Preparing the build environment..."
 
 pushd $(dirname "$0") > /dev/null
-CORES=`cat /proc/cpuinfo | grep -c processor`
+CORES=${JOBS:-$(nproc)}
 
-# Define toolchain variables
-CLANG_DIR=$PWD/toolchain/clang_14
-PATH=$CLANG_DIR/bin:$PATH
+# Prefer a complete modern LLVM toolchain for CFI and Clang FORTIFY.
+if [ -n "${KERNEL_TOOLCHAIN_BIN:-}" ]; then
+    CLANG_DIR=$(dirname "$KERNEL_TOOLCHAIN_BIN")
+elif [ -x "$PWD/toolchain/neutron_18/bin/clang" ]; then
+    KERNEL_TOOLCHAIN_BIN="$PWD/toolchain/neutron_18/bin"
+elif [ -x /usr/lib/llvm-18/bin/clang ]; then
+    KERNEL_TOOLCHAIN_BIN=/usr/lib/llvm-18/bin
+fi
+CLANG_DIR=${CLANG_DIR:-$PWD/toolchain/clang_14}
+PATH=${KERNEL_TOOLCHAIN_BIN:-$CLANG_DIR/bin}:$PATH
 
 # Check if toolchain exists
-if [ ! -f "$CLANG_DIR/bin/clang-14" ]; then
+if ! command -v clang >/dev/null; then
     echo "-----------------------------------------------"
     echo "Toolchain not found! Downloading..."
     echo "-----------------------------------------------"
@@ -142,11 +149,7 @@ if [[ "$DTB_OPTION" == "y" ]]; then
 	DTBS=y
 fi
 
-# Prefer the bundled Neutron clang toolchain (includes llvm-ar/llvm-nm).
-TOOLCHAIN_BIN="$PWD/toolchain/neutron_18/bin"
-if [ -d "$TOOLCHAIN_BIN" ]; then
-    export PATH="$TOOLCHAIN_BIN:$PATH"
-fi
+export PATH
 
 rm -rf build/out/$MODEL
 mkdir -p build/out/$MODEL/zip/files
@@ -176,6 +179,11 @@ echo "Generating configuration file..."
 echo "-----------------------------------------------"
 make ${MAKE_ARGS} -j$CORES exynos9830_defconfig $MODEL.config $KSU $RECOVERY || abort
 
+if [ -z "$RECOVERY" ] && ! grep -q '^CONFIG_FORTIFY_SOURCE=y$' out/.config; then
+    echo "The hardened defconfig requires LLVM 18 or newer for FORTIFY."
+    echo "Set KERNEL_TOOLCHAIN_BIN to the bin directory of a supported toolchain."
+    abort
+fi
 if [ -z "$RECOVERY" ] && [ -z "$DTBS" ] && grep -q '^CONFIG_SECURITY_DEFEX=y$' out/.config; then
     if [ -z "$DPOLICY_PATH" ] || [ ! -f "$DPOLICY_PATH" ]; then
         echo "-----------------------------------------------"
