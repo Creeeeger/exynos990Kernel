@@ -178,13 +178,13 @@ static void sdp_crypto_exit_rng(void)
 #endif
 }
 
-static void __exit sdp_crypto_exit_sha512(void)
+static void sdp_crypto_exit_sha512(void)
 {
 	crypto_free_shash(sha512_tfm);
 	sha512_tfm = NULL;
 }
 
-void __exit sdp_crypto_exit(void)
+void sdp_crypto_exit(void)
 {
 	sdp_crypto_exit_rng();
 	sdp_crypto_exit_sha512();

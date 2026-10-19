@@ -100,6 +100,6 @@ int sdp_crypto_aes_gcm_decrypt_pack(struct crypto_aead *tfm, gcm_pack *pack);
 struct crypto_aead *sdp_crypto_aes_gcm_key_setup(const u8 key[], size_t key_len);
 void sdp_crypto_aes_gcm_key_free(struct crypto_aead *tfm);
 int __init sdp_crypto_init(void);
-void __exit sdp_crypto_exit(void);
+void sdp_crypto_exit(void);
 
 #endif /* SDP_CRYPTO_H_ */
