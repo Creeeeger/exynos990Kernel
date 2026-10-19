@@ -404,7 +404,8 @@ static cpumask_var_t perf_online_mask;
  *   1 - disallow cpu events for unpriv
  *   2 - disallow kernel profiling for unpriv
  */
-int sysctl_perf_event_paranoid __read_mostly = 2;
+int sysctl_perf_event_paranoid __read_mostly =
+	IS_ENABLED(CONFIG_SECURITY_PERF_EVENTS_RESTRICT) ? 3 : 2;
 
 /* Minimum for 512 kiB + 1 user control page */
 int sysctl_perf_event_mlock __read_mostly = 512 + (PAGE_SIZE / 1024); /* 'free' kiB per user */
@@ -10645,6 +10646,9 @@ SYSCALL_DEFINE5(perf_event_open,
 		return err;
 
 	/* Do we allow access to perf_event_open(2) ? */
+	if (sysctl_perf_event_paranoid > 2 && !capable(CAP_SYS_ADMIN))
+		return -EACCES;
+
 	err = security_perf_event_open(&attr, PERF_SECURITY_OPEN);
 	if (err)
 		return err;

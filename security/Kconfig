@@ -31,6 +31,14 @@ config SECURITY
 
 	  If you are unsure how to answer this question, answer N.
 
+config SECURITY_PERF_EVENTS_RESTRICT
+	bool "Restrict unprivileged access to performance events"
+	depends on PERF_EVENTS
+	default y
+	help
+	  Default perf_event_paranoid to 3 and reject unprivileged perf events
+	  at that level, in addition to the SELinux perf security hooks.
+
 config SECURITY_WRITABLE_HOOKS
 	depends on SECURITY
 	bool
