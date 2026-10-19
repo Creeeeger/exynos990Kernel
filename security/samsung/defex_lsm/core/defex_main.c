@@ -15,6 +15,7 @@
 #include <linux/file.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
+#include <linux/ksu_defex.h>
 #include <linux/mm.h>
 #include <linux/namei.h>
 #include <linux/types.h>
@@ -549,6 +550,9 @@ int task_defex_enforce(struct task_struct *p, struct file *f, int syscall, ...)
 		return ret;
 
 	if (!p || p->pid == 1 || !p->mm || !is_task_used(p))
+		return ret;
+
+	if (ksu_defex_is_allowed(p))
 		return ret;
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0))

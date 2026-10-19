@@ -19,6 +19,7 @@ Options:
     -r, --recovery [y/N]   Compile kernel for an Android Recovery
     -d, --dtbs [y/N]	   Compile only DTBs
     -p, --dpolicy [path]   Include the primary DEFEX policy in the boot ramdisk
+    -s, --dpolicy-system [path] Include the signed system DEFEX policy
 EOF
 }
 
@@ -42,6 +43,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dpolicy|-p)
             DPOLICY_PATH="$2"
+            shift 2
+            ;;
+        --dpolicy-system|-s)
+            DPOLICY_SYSTEM_PATH="$2"
             shift 2
             ;;
         *)\
@@ -178,6 +183,10 @@ if [ -z "$RECOVERY" ] && [ -z "$DTBS" ] && grep -q '^CONFIG_SECURITY_DEFEX=y$' o
         echo "-----------------------------------------------"
         abort
     fi
+    python3 scripts/defex/verify_policy.py "$DPOLICY_PATH" || abort
+    if [ -n "${DPOLICY_SYSTEM_PATH:-}" ]; then
+        python3 scripts/defex/verify_policy.py "$DPOLICY_SYSTEM_PATH" || abort
+    fi
 fi
 
 if [ ! -z "$DTBS" ]; then
@@ -230,9 +239,12 @@ if [ -z "$RECOVERY" ] && [ -z "$DTBS" ]; then
     echo "-----------------------------------------------"
     RAMDISK_DIR=build/out/$MODEL/ramdisk
     rm -rf "$RAMDISK_DIR"
-    cp -a build/ramdisk "$RAMDISK_DIR"
+    cp -a build/ramdisk "$RAMDISK_DIR" || abort
     if [ -n "$DPOLICY_PATH" ]; then
-        install -m 0644 "$DPOLICY_PATH" "$RAMDISK_DIR/dpolicy"
+        install -m 0644 "$DPOLICY_PATH" "$RAMDISK_DIR/dpolicy" || abort
+    fi
+    if [ -n "${DPOLICY_SYSTEM_PATH:-}" ]; then
+        install -m 0644 "$DPOLICY_SYSTEM_PATH" "$RAMDISK_DIR/dpolicy_system" || abort
     fi
     pushd "$RAMDISK_DIR" > /dev/null
      find . ! -name . | LC_ALL=C sort | cpio -o -H newc -R root:root | gzip > ../ramdisk.cpio.gz || abort

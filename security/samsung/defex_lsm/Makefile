@@ -8,7 +8,7 @@ SAFEPLACE_ENABLE=true
 IMMUTABLE_ENABLE=true
 LP_ENABLE=true
 UMH_RESTRICTION_ENABLE=true
-TRUSTED_MAP_ENABLE=false
+TRUSTED_MAP_ENABLE=true
 
 ifneq ($(wildcard $(srctree)/include/crypto/internal/rsa.h),)
     $(warning [DEFEX] INTEGRITY_ENABLE)
@@ -19,7 +19,7 @@ endif
 CACHES_ENABLE=true
 
 # OEM Unlock dependency
-OEM_UNLOCK_DEPENDENCY=true
+OEM_UNLOCK_DEPENDENCY=false
 
 # use the ramdisk or system_root to store rules file
 RAMDISK_ENABLE=true
@@ -38,11 +38,7 @@ defex-y += catch_engine/defex_ht.o
 defex-y += defex_rules.o
 defex-$(CONFIG_COMPAT) += catch_engine/defex_catch_list_compat.o
 
-# Immutable Feature is applied with permissive mode first.
-DEFEX_DEFINES := -DDEFEX_PERMISSIVE_IM
-
-# Integrity Feature is applied with permissive mode first.
-DEFEX_DEFINES += -DDEFEX_PERMISSIVE_INT
+DEFEX_DEFINES :=
 
 ifeq ($(CONFIG_DEFEX_KERNEL_ONLY), y)
     DEFEX_DEFINES += -DDEFEX_KERNEL_ONLY
@@ -113,8 +109,7 @@ endif
 
 ifeq ($(TRUSTED_MAP_ENABLE), true)
     DEFEX_DEFINES += -DDEFEX_TRUSTED_MAP_ENABLE
-    DEFEX_DEFINES += -DDEFEX_PERMISSIVE_TM
-    #DEFEX_DEFINES += -DDEFEX_TM_DEFAULT_POLICY_ENABLE
+    DEFEX_DEFINES += -DDEFEX_TM_DEFAULT_POLICY_ENABLE
     defex-y += feature_trusted_map/defex_trusted_map.o
     defex-y += feature_trusted_map/dtm.o
     defex-y += feature_trusted_map/dtm_engine.o
