@@ -1503,12 +1503,18 @@ config UH
 	  please check a memory map for it.
 
 config FASTUH_RKP
-	bool "
 	bool "Enable RKP (Realtime Kernel Protection) UH feature"
 	depends on UH && !UH_RKP
 	default n
 	help
 	  it protects a kernel text and etc.
+
+config KSU_SAMSUNG_SECURITY
+	bool
+	default y if KSU=y && SECURITY_DEFEX && FASTUH_RKP && KDP_CRED
+	help
+	  Samsung integration uses protected credential updates and explicit
+	  DEFEX exceptions for KernelSU-authorized tasks.
 
 config UH_DEBUG
     bool "Enable micro hypervisor debug feature"
