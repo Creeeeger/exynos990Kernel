@@ -11,13 +11,14 @@
 
 #include <linux/raid/xor.h>
 #include <linux/module.h>
+#include <asm/cpufeature.h>
 #include <asm/neon-intrinsics.h>
 
 static void xor_arm64_neon_2(unsigned long bytes, unsigned long * __restrict p1,
 	const unsigned long * __restrict p2)
 {
-	uint64_t *dp1 = (uint64_t *)p1;
-	uint64_t *dp2 = (uint64_t *)p2;
+	__neon_uint64_t *dp1 = (__neon_uint64_t *)p1;
+	__neon_uint64_t *dp2 = (__neon_uint64_t *)p2;
 
 	register uint64x2_t v0, v1, v2, v3;
 	long lines = bytes / (sizeof(uint64x2_t) * 4);
@@ -44,9 +45,9 @@ static void xor_arm64_neon_3(unsigned long bytes, unsigned long * __restrict p1,
 	const unsigned long * __restrict p2,
 	const unsigned long * __restrict p3)
 {
-	uint64_t *dp1 = (uint64_t *)p1;
-	uint64_t *dp2 = (uint64_t *)p2;
-	uint64_t *dp3 = (uint64_t *)p3;
+	__neon_uint64_t *dp1 = (__neon_uint64_t *)p1;
+	__neon_uint64_t *dp2 = (__neon_uint64_t *)p2;
+	__neon_uint64_t *dp3 = (__neon_uint64_t *)p3;
 
 	register uint64x2_t v0, v1, v2, v3;
 	long lines = bytes / (sizeof(uint64x2_t) * 4);
@@ -81,10 +82,10 @@ static void xor_arm64_neon_4(unsigned long bytes, unsigned long * __restrict p1,
 	const unsigned long * __restrict p3,
 	const unsigned long * __restrict p4)
 {
-	uint64_t *dp1 = (uint64_t *)p1;
-	uint64_t *dp2 = (uint64_t *)p2;
-	uint64_t *dp3 = (uint64_t *)p3;
-	uint64_t *dp4 = (uint64_t *)p4;
+	__neon_uint64_t *dp1 = (__neon_uint64_t *)p1;
+	__neon_uint64_t *dp2 = (__neon_uint64_t *)p2;
+	__neon_uint64_t *dp3 = (__neon_uint64_t *)p3;
+	__neon_uint64_t *dp4 = (__neon_uint64_t *)p4;
 
 	register uint64x2_t v0, v1, v2, v3;
 	long lines = bytes / (sizeof(uint64x2_t) * 4);
@@ -127,11 +128,11 @@ static void xor_arm64_neon_5(unsigned long bytes, unsigned long * __restrict p1,
 	const unsigned long * __restrict p4,
 	const unsigned long * __restrict p5)
 {
-	uint64_t *dp1 = (uint64_t *)p1;
-	uint64_t *dp2 = (uint64_t *)p2;
-	uint64_t *dp3 = (uint64_t *)p3;
-	uint64_t *dp4 = (uint64_t *)p4;
-	uint64_t *dp5 = (uint64_t *)p5;
+	__neon_uint64_t *dp1 = (__neon_uint64_t *)p1;
+	__neon_uint64_t *dp2 = (__neon_uint64_t *)p2;
+	__neon_uint64_t *dp3 = (__neon_uint64_t *)p3;
+	__neon_uint64_t *dp4 = (__neon_uint64_t *)p4;
+	__neon_uint64_t *dp5 = (__neon_uint64_t *)p5;
 
 	register uint64x2_t v0, v1, v2, v3;
 	long lines = bytes / (sizeof(uint64x2_t) * 4);
@@ -188,7 +189,7 @@ static inline uint64x2_t eor3(uint64x2_t p, uint64x2_t q, uint64x2_t r)
 {
 	uint64x2_t res;
 
-	asm(ARM64_ASM_PREAMBLE ".arch_extension sha3\n"
+	asm(".arch_extension sha3\n"
 	    "eor3 %0.16b, %1.16b, %2.16b, %3.16b"
 	    : "=w"(res) : "w"(p), "w"(q), "w"(r));
 	return res;
@@ -199,9 +200,9 @@ static void xor_arm64_eor3_3(unsigned long bytes,
 	const unsigned long * __restrict p2,
 	const unsigned long * __restrict p3)
 {
-	uint64_t *dp1 = (uint64_t *)p1;
-	uint64_t *dp2 = (uint64_t *)p2;
-	uint64_t *dp3 = (uint64_t *)p3;
+	__neon_uint64_t *dp1 = (__neon_uint64_t *)p1;
+	__neon_uint64_t *dp2 = (__neon_uint64_t *)p2;
+	__neon_uint64_t *dp3 = (__neon_uint64_t *)p3;
 
 	register uint64x2_t v0, v1, v2, v3;
 	long lines = bytes / (sizeof(uint64x2_t) * 4);
@@ -235,10 +236,10 @@ static void xor_arm64_eor3_4(unsigned long bytes,
 	const unsigned long * __restrict p3,
 	const unsigned long * __restrict p4)
 {
-	uint64_t *dp1 = (uint64_t *)p1;
-	uint64_t *dp2 = (uint64_t *)p2;
-	uint64_t *dp3 = (uint64_t *)p3;
-	uint64_t *dp4 = (uint64_t *)p4;
+	__neon_uint64_t *dp1 = (__neon_uint64_t *)p1;
+	__neon_uint64_t *dp2 = (__neon_uint64_t *)p2;
+	__neon_uint64_t *dp3 = (__neon_uint64_t *)p3;
+	__neon_uint64_t *dp4 = (__neon_uint64_t *)p4;
 
 	register uint64x2_t v0, v1, v2, v3;
 	long lines = bytes / (sizeof(uint64x2_t) * 4);
@@ -280,11 +281,11 @@ static void xor_arm64_eor3_5(unsigned long bytes,
 	const unsigned long * __restrict p4,
 	const unsigned long * __restrict p5)
 {
-	uint64_t *dp1 = (uint64_t *)p1;
-	uint64_t *dp2 = (uint64_t *)p2;
-	uint64_t *dp3 = (uint64_t *)p3;
-	uint64_t *dp4 = (uint64_t *)p4;
-	uint64_t *dp5 = (uint64_t *)p5;
+	__neon_uint64_t *dp1 = (__neon_uint64_t *)p1;
+	__neon_uint64_t *dp2 = (__neon_uint64_t *)p2;
+	__neon_uint64_t *dp3 = (__neon_uint64_t *)p3;
+	__neon_uint64_t *dp4 = (__neon_uint64_t *)p4;
+	__neon_uint64_t *dp5 = (__neon_uint64_t *)p5;
 
 	register uint64x2_t v0, v1, v2, v3;
 	long lines = bytes / (sizeof(uint64x2_t) * 4);
@@ -322,7 +323,7 @@ static void xor_arm64_eor3_5(unsigned long bytes,
 
 static int __init xor_neon_init(void)
 {
-	if (IS_ENABLED(CONFIG_AS_HAS_SHA3) && cpu_have_named_feature(SHA3)) {
+	if (elf_hwcap & HWCAP_SHA3) {
 		xor_block_inner_neon.do_3 = xor_arm64_eor3_3;
 		xor_block_inner_neon.do_4 = xor_arm64_eor3_4;
 		xor_block_inner_neon.do_5 = xor_arm64_eor3_5;
