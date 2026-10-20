@@ -35,8 +35,11 @@ kprobes remain disabled to avoid patching RKP-protected kernel text.
 KernelSU-Next is vendored as ordinary source in this kernel repository,
 including the Samsung integration changes and upstream license. Normal clones
 contain all required KSU files; no submodule initialization or KSU fork is
-needed. The drivers/kernelsu symlink points to the vendored kernel directory.
-KernelSU-Next/UPSTREAM records the source revisions, and kernel/version.mk
+needed. The drivers/kernelsu symlink points to KernelSU/kernel. The distinct
+KernelSU directory lets Git switch normally to older branches that still
+use the KernelSU-Next submodule; any retained submodule checkout is ignored
+and is not used by this branch.
+KernelSU/UPSTREAM records the source revisions, and kernel/version.mk
 inside that directory pins version 33321 and tag v3.4.0-legacy independently
 of the parent kernel's Git history or the availability of Git metadata.
 

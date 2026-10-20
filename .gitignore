@@ -141,3 +141,6 @@ kernel/configs/android-*.cfg
 /out/
 /toolchain/
 *.pyc
+
+# Submodule checkout retained when switching from older branches.
+/KernelSU-Next/
