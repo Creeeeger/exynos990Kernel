@@ -42,6 +42,10 @@ def check(path):
         for name in ("KSU_MANUAL_HOOK", "KSU_SAMSUNG_SECURITY"):
             if values.get(name) != "y":
                 errors.append(f"CONFIG_{name} is required with KernelSU")
+        for name in ("KSU_KPROBES_HOOK", "KSU_SYSCALL_TABLE_HOOK",
+                     "KSU_DISABLE_MANAGER", "KSU_DISABLE_POLICY"):
+            if values.get(name) == "y":
+                errors.append(f"CONFIG_{name} is incompatible with the Samsung KernelSU integration")
     return errors
 
 
