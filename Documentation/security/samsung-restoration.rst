@@ -36,6 +36,14 @@ KernelSU integration changes are recorded in the KernelSU-Next submodule
 revision referenced by this kernel. Initialize and update submodules when
 checking out these changes.
 
+The KernelSU base is upstream legacy revision 0b17f24246db (2026-10-17),
+whose nearest release tag is v3.4.0-legacy and which includes subsequent
+legacy fixes and 3.4.2 backports. Samsung compatibility patches are applied
+on top. The optional upstream preinit runner is unavailable with manual
+hooks: it requires syscall-table interception, which this RKP integration
+does not enable. KPERFMON uses its existing logging stub in standalone
+checkouts without Samsung's Android logging headers and generator.
+
 Alternative LSMs, debug/test modes and obsolete encryption backends are not
 enabled indiscriminately. This platform has no TPM trusted-key backend. FIVE's
 legacy TEE/ICD/TZIC drivers are excluded by the selected PROCA S-OS backend.
