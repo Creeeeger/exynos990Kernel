@@ -28,7 +28,8 @@ nop
 #ifdef CONFIG_RKP_CFP_JOPP
 
 #define RRX x16
-#define RRX_32 w16
+#define RRT x17
+#define RRT_32 w17
 
 /*
  * Load the word just before the function instructions.
@@ -37,26 +38,51 @@ nop
  */
 	.macro	springboard_blr, reg
 	jopp_springboard_blr_\reg:
-	push	RRX, xzr
-	ldr	RRX_32, [\reg, #-4]
-	subs	RRX_32, RRX_32, #0xbe7, lsl #12
-	cmp	RRX_32, #0xbad
+	push	RRX, RRT
+	mov	RRX, \reg
+	ldr	RRT_32, [RRX, #-4]
+	subs	RRT_32, RRT_32, #0xbe7, lsl #12
+	cmp	RRT_32, #0xbad
 	b.eq	1f
+
+#ifdef CONFIG_CFI_CLANG
+	/*
+	 * CFI function pointers can name packed linker-generated B thunks.
+	 * They have no space for a JOPP entry marker. Accept only aligned B
+	 * instructions in the immutable CFI jump-table range, whose targets
+	 * are function entries selected by the compiler. Padding and branch
+	 * instructions elsewhere in the kernel are not valid substitutes.
+	 */
+	tst	RRX, #3
+	b.ne	2f
+	adr_l	RRT, __jopp_cfi_jt_start
+	cmp	RRX, RRT
+	b.lo	3f
+	adr_l	RRT, __jopp_cfi_jt_end
+	cmp	RRX, RRT
+	b.hs	3f
+	ldr	RRT_32, [RRX]
+	lsr	RRT_32, RRT_32, #26
+	cmp	RRT_32, #5		// B imm26, excluding BL and BR
+	b.eq	1f
+	b	2f
+3:
+#endif
 
 	/*
 	 * DDK/VRA/RTA	0xffffff90f9fe0000 ~ 0xffffff90fa90ffff
 	 * Should match FIMC_VA and FIMC_SIZE
 	 */
-	mov	RRX, #0xffffff0000000000
-	movk	RRX, #0xff90, lsl #32
-	movk	RRX, #0xf9fe, lsl #16
-	cmp 	\reg, RRX
+	mov	RRT, #0xffffff0000000000
+	movk	RRT, #0xff90, lsl #32
+	movk	RRT, #0xf9fe, lsl #16
+	cmp 	RRX, RRT
 	b.lo	2f
-	movk	RRX, #0xfa91, lsl #16
-	cmp 	\reg, RRX
+	movk	RRT, #0xfa91, lsl #16
+	cmp 	RRX, RRT
 	b.hs	2f
 1:
-	pop	RRX, xzr
+	pop	RRX, RRT
 	br 	\reg
 2: //crash
 #if 0

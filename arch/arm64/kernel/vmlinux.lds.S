@@ -134,7 +134,10 @@ SECTIONS
 			IDMAP_TEXT
 			HIBERNATE_TEXT
 			TRAMP_TEXT
+			. = ALIGN(16);
+			__jopp_cfi_jt_start = .;
 			*(.text..L.cfi.jumptable .text..L.cfi.jumptable.*)
+			__jopp_cfi_jt_end = .;
 			*(.fixup)
 			*(.gnu.warning)
 		. = ALIGN(16);
