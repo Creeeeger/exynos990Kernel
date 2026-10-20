@@ -15,7 +15,8 @@ $(info kperfmon_DUMMY="CONFIG_KPERFMON is off.")
 endif
 
 ifneq ($(shell [ -e $(srctree)/include/linux/olog.pb.h ] && echo exist), exist)
-$(info kperfmon_DUMMY="olog.pb.h file is missing... retrying")
+ifneq ($(and $(wildcard $(srctree)/../../frameworks/base/proto/src/olog.proto),$(wildcard $(srctree)/../../vendor/samsung/system/libperflog/aprotoc)),)
+$(info KPERFMON: generating the Android logging protocol header)
 
 $(info kperfmon_DUMMY="$(shell cp -f $(srctree)/../../frameworks/base/proto/src/olog.proto  $(srctree)/drivers/kperfmon/)")
 $(info kperfmon_DUMMY="$(shell cp -f $(srctree)/../../vendor/samsung/system/libperflog/aprotoc  $(srctree)/drivers/kperfmon/)")
@@ -24,19 +25,19 @@ $(info kperfmon_DUMMY="$(shell $(srctree)/drivers/kperfmon/aprotoc --perflog_out
 $(info kperfmon_DUMMY="$(shell cp -f $(srctree)/drivers/kperfmon/olog.pb.h  $(srctree)/include/linux/)")
 #$(info kperfmon_DUMMY="$(shell ls $(srctree)/drivers/kperfmon/*)")
 #$(info kperfmon_DUMMY="$(shell ls $(srctree)/include/linux/olog*)")
+endif
 
 ifneq ($(shell [ -e $(srctree)/include/linux/olog.pb.h ] && echo exist), exist)
-$(info kperfmon_DUMMY="olog.pb.h file is missing... again")
+$(info KPERFMON: Android logging headers unavailable; using the existing stub)
 FLAG=0
 endif
 endif
 
 ifneq ($(shell [ -e $(srctree)/../../system/core/liblog/include/log/perflog.h ] && echo exist), exist)
 FLAG=0
-$(info kperfmon_DUMMY="perflog.h file is missing.")
-endif
-
+else
 $(info kperfmon_DUMMY="$(shell cp -f $(srctree)/../../system/core/liblog/include/log/perflog.h  $(srctree)/include/linux/)")
+endif
 ifeq ($(FLAG), 1)
 $(info kperfmon_DUMMY="$(shell cp -f $(srctree)/drivers/kperfmon/ologk.h $(srctree)/include/linux/)")
 	obj-y				+= kperfmon.o
