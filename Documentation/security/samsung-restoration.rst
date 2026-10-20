@@ -32,9 +32,13 @@ overrides use per-task KDP copies, and SELinux enforcement updates use the
 Samsung protected update path. KernelSU remains built in and uses manual hooks;
 kprobes remain disabled to avoid patching RKP-protected kernel text.
 
-KernelSU integration changes are recorded in the KernelSU-Next submodule
-revision referenced by this kernel. Initialize and update submodules when
-checking out these changes.
+KernelSU-Next is vendored as ordinary source in this kernel repository,
+including the Samsung integration changes and upstream license. Normal clones
+contain all required KSU files; no submodule initialization or KSU fork is
+needed. The drivers/kernelsu symlink points to the vendored kernel directory.
+KernelSU-Next/UPSTREAM records the source revisions, and kernel/version.mk
+inside that directory pins version 33321 and tag v3.4.0-legacy independently
+of the parent kernel's Git history or the availability of Git metadata.
 
 The KernelSU base is upstream legacy revision 0b17f24246db (2026-10-17),
 whose nearest release tag is v3.4.0-legacy and which includes subsequent

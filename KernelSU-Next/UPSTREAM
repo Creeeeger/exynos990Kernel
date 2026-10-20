@@ -1,0 +1,16 @@
+Source: https://github.com/KernelSU-Next/KernelSU-Next
+Branch: legacy
+Upstream base: 0b17f24246db5c80c056b92c15bcad2b77f1276e
+Vendored snapshot: 8c2cfb684074fb169d971fc95ec0627d44e7cd37
+Nearest upstream release tag: v3.4.0-legacy
+KernelSU version code: 33321
+License: see LICENSE and the individual source headers.
+
+This directory is ordinary source tracked by the parent kernel repository.
+It includes Samsung KDP credential overrides, DEFEX authorization, protected
+SELinux enforcement updates, per-task shell authorization, and the manual-hook
+preinit exclusion. A separate KernelSU repository or fork is not needed.
+
+kernel/version.mk preserves the snapshot's release identity in normal clones,
+shallow clones, and source archives. Update its metadata and this provenance
+record when importing a newer upstream base and reapplying the Samsung changes.
