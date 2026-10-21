@@ -8,7 +8,7 @@
 
 # Absolute relocation type $(ARCH_REL_TYPE_ABS) needs to be defined before
 # the inclusion of generic Makefile.
-ARCH_REL_TYPE_ABS := R_AARCH64_JUMP_SLOT|R_AARCH64_GLOB_DAT|R_AARCH64_ABS64
+ARCH_REL_TYPE_ABS := R_AARCH64_JUMP_SLOT|R_AARCH64_GLOB_DAT|R_AARCH64_ABS64|R_AARCH64_RELATIVE
 include $(srctree)/lib/vdso/Makefile
 
 obj-vdso := vgettimeofday.o note.o sigreturn.o
@@ -31,6 +31,9 @@ ccflags-y += -DDISABLE_BRANCH_PROFILING
 
 
 CFLAGS_REMOVE_vgettimeofday.o = $(CC_FLAGS_FTRACE) -Os $(CC_FLAGS_SCS)
+# The userspace vDSO is mapped read-only. Kernel JOPP entry metadata would
+# introduce dynamic relocations that Android's linker cannot write there.
+CFLAGS_REMOVE_vgettimeofday.o += -fpatchable-function-entry=1,1
 KBUILD_CFLAGS			+= $(DISABLE_LTO)
 KASAN_SANITIZE			:= n
 UBSAN_SANITIZE			:= n
