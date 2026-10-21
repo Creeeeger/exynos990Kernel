@@ -153,8 +153,31 @@ class ELF:
         """
         if len(self.__relocs) == 0:
             relocs = self.__readelf_raw(["-rW",  self.__elf_file])
-            rel = re.compile(r"^(" + self.__re_hexdecimal + r")\s*", re.MULTILINE)
+            # REL/RELA rows contain an offset, info field and relocation type.
+            # RELR readelf output also has row indices; those are not offsets.
+            rel = re.compile(r"^\s*([0-9A-Fa-f]+)\s+[0-9A-Fa-f]+\s+R_\w+", re.MULTILINE)
             self.__relocs = [self.utils.to_int(el) for el in rel.findall(relocs.strip())]
+
+            # Decode ELF64 RELR directly, independently of readelf's formatting.
+            # Each address entry relocates one word; bitmap entries describe
+            # the next 63 words, starting after the previous address entry.
+            relr = self.get_section_by_name(".relr.dyn")
+            if relr is not None:
+                with open(self.__elf_file, "rb") as elf_file:
+                    elf_file.seek(relr.offset)
+                    relr_data = elf_file.read(relr.size)
+                next_addr = None
+                for entry, in struct.iter_unpack("<Q", relr_data):
+                    if not entry & 1:
+                        self.__relocs.append(entry)
+                        next_addr = entry + 8
+                    else:
+                        if next_addr is None:
+                            raise ValueError("RELR bitmap without an address entry")
+                        self.__relocs.extend(next_addr + bit * 8 for bit in range(63)
+                                             if entry & (1 << (bit + 1)))
+                        next_addr += 63 * 8
+            self.__relocs = sorted(set(self.__relocs))
 
         if start_addr and end_addr is not None:
             ranged_rela = list()
