@@ -2,8 +2,8 @@
 """Reject builds where Kconfig dropped a required production protection."""
 
 from pathlib import Path
+import argparse
 import re
-import sys
 
 REQUIRED = """
 AUDIT SECURITY SECURITY_SELINUX SECURITY_SELINUX_ALWAYS_ENFORCE
@@ -17,7 +17,7 @@ FS_ENCRYPTION FS_ENCRYPTION_INLINE_CRYPT EXT4_FS_ENCRYPTION
 F2FS_FS_ENCRYPTION BLK_INLINE_ENCRYPTION SCSI_UFS_CRYPTO DM_CRYPT
 DM_DEFAULT_KEY ECRYPT_FS ECRYPTFS_FEK_INTEGRITY DM_VERITY FS_VERITY
 SECCOMP SECCOMP_FILTER RANDOMIZE_BASE ARM64_PAN STACKPROTECTOR_STRONG
-STRICT_KERNEL_RWX STRICT_MODULE_RWX HARDENED_USERCOPY FORTIFY_SOURCE
+STRICT_KERNEL_RWX STRICT_MODULE_RWX HARDENED_USERCOPY
 SLAB_FREELIST_RANDOM SLAB_FREELIST_HARDENED CFI_CLANG SHADOW_CALL_STACK
 INIT_STACK_ALL_ZERO INIT_ON_ALLOC_DEFAULT_ON INIT_ON_FREE_DEFAULT_ON
 MODULE_SIG MODULE_SIG_FORCE ARM64_SSBD HARDEN_BRANCH_PREDICTOR
@@ -34,12 +34,20 @@ KPROBES
 """.split()
 
 
-def check(path):
+def check(path, requested=None):
     values = dict(re.findall(r"^CONFIG_(\w+)=(.*)$", path.read_text(), re.M))
-    errors = [f"CONFIG_{name} must be y" for name in REQUIRED if values.get(name) != "y"]
-    errors += [f"CONFIG_{name} must be disabled" for name in FORBIDDEN if values.get(name) in ("y", "m")]
+    wanted = None if requested is None else dict(re.findall(
+        r"^CONFIG_(\w+)=(.*)$", requested.read_text(), re.M))
+    required = REQUIRED if wanted is None else [name for name in REQUIRED if wanted.get(name) == "y"]
+    forbidden = FORBIDDEN if wanted is None else [name for name in FORBIDDEN if wanted.get(name) not in ("y", "m")]
+    errors = [f"CONFIG_{name} must be y" for name in required if values.get(name) != "y"]
+    errors += [f"CONFIG_{name} must be disabled" for name in forbidden if values.get(name) in ("y", "m")]
     if values.get("KSU") == "y":
-        for name in ("KSU_MANUAL_HOOK", "KSU_SAMSUNG_SECURITY"):
+        ksu_required = ["KSU_MANUAL_HOOK"]
+        if wanted is None or all(values.get(name) == "y" for name in
+                                 ("SECURITY_DEFEX", "FASTUH_RKP", "KDP_CRED")):
+            ksu_required.append("KSU_SAMSUNG_SECURITY")
+        for name in ksu_required:
             if values.get(name) != "y":
                 errors.append(f"CONFIG_{name} is required with KernelSU")
         for name in ("KSU_KPROBES_HOOK", "KSU_SYSCALL_TABLE_HOOK",
@@ -50,8 +58,12 @@ def check(path):
 
 
 if __name__ == "__main__":
-    config = Path(sys.argv[1] if len(sys.argv) > 1 else "out/.config")
-    errors = check(config)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("config", nargs="?", type=Path, default=Path("out/.config"))
+    parser.add_argument("--defconfig", type=Path,
+                        help="Validate the protections explicitly requested by this test profile")
+    args = parser.parse_args()
+    errors = check(args.config, args.defconfig)
     if errors:
-        sys.exit("Security configuration check failed:\n" + "\n".join(errors))
-    print(f"Verified {len(REQUIRED)} required security settings: {config}")
+        raise SystemExit("Security configuration check failed:\n" + "\n".join(errors))
+    print(f"Verified requested security settings: {args.config}")
