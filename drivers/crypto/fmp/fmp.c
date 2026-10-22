@@ -363,15 +363,13 @@ int exynos_fmp_crypt(struct fmp_crypto_info *fmp_ci, void *priv)
 	}
 
 #ifdef CONFIG_EXYNOS_FMP_FIPS
-	if (fips == false && fmp->result.overall == 0) {
-#if defined(CONFIG_NODE_FOR_SELFTEST_FAIL)
-		pr_err("%s: Fail to work fmp config due to all fips test is not done.\n",
-			__func__);
-#else
-		panic("%s: Fail to work fmp config due to all fips test is not done\n",
-			__func__);
-#endif
-		return -EINVAL;
+	if (!fips && !smp_load_acquire(&fmp->result.overall)) {
+		/* The UFS submission path cannot sleep. Keep encrypted requests
+		 * queued until real hardware self-tests finish in process context.
+		 */
+		if (atomic_cmpxchg(&fmp->fips_start, 0, 1) == 0)
+			schedule_work(&fmp->fips_work);
+		return -EAGAIN;
 	}
 #endif
 

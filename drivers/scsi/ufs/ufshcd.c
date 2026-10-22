@@ -2753,6 +2753,7 @@ static int ufshcd_map_sg(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 	struct scsi_cmnd *cmd;
 	int sg_segments;
 	int i;
+	int crypto_ret;
 	u32 offset;
 	void *bounce_buffer_addr;
 	void *dma_phy_addr;
@@ -2952,7 +2953,10 @@ static int ufshcd_map_sg(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 		lrbp->utr_descriptor_ptr->prd_table_length = 0;
 	}
 
-	return ufshcd_map_sg_crypto(hba, lrbp);
+	crypto_ret = ufshcd_map_sg_crypto(hba, lrbp);
+	if (crypto_ret)
+		scsi_dma_unmap(cmd);
+	return crypto_ret;
 }
 
 /**
@@ -3409,7 +3413,8 @@ send_orig_cmd:
 		ufshcd_release(hba);
 		lrbp->cmd = NULL;
 		clear_bit_unlock(tag, &hba->lrb_in_use);
-		ufshcd_release(hba);
+		if (err == -EAGAIN)
+			err = SCSI_MLQUEUE_HOST_BUSY;
 		goto out;
 	}
 	/* Make sure descriptors are ready before ringing the doorbell */

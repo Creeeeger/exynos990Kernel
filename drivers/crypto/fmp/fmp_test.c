@@ -20,10 +20,83 @@
 #include <linux/blk_types.h>
 #include <crypto/fmp.h>
 #include <linux/mm_types.h>
+#include <linux/file.h>
+#include <linux/fs_struct.h>
+#include <linux/magic.h>
+#include <linux/pid.h>
+#include <linux/sched/task.h>
 #include "fmp_test.h"
 
-#define MAX_RETRY_COUNT (0x100)
 #define FIPS_BLOCK_NAME	"/dev/block/by-name/fmp_selftest"
+
+/* Older Exynos partition tables have no fmp_selftest partition. Allocate
+ * one block owned by an unlinked ext4 file instead of overwriting a guessed
+ * raw sector. Its inode stays open until every hardware KAT I/O has finished.
+ */
+static int fmp_test_alloc_scratch(struct fmp_test_data *data)
+{
+	struct pid *pid = find_get_pid(1);
+	struct task_struct *init = get_pid_task(pid, PIDTYPE_PID);
+	struct inode *inode;
+	struct path root;
+	void *zero;
+	loff_t pos = 0;
+	ssize_t written;
+	int ret;
+
+	put_pid(pid);
+	if (!init)
+		return -ESRCH;
+	task_lock(init);
+	get_fs_root(init->fs, &root);
+	task_unlock(init);
+	put_task_struct(init);
+	data->scratch_file = file_open_root(root.dentry, root.mnt,
+		"metadata/vold", O_TMPFILE | O_EXCL | O_RDWR, 0600);
+	path_put(&root);
+	if (IS_ERR(data->scratch_file)) {
+		ret = PTR_ERR(data->scratch_file);
+		data->scratch_file = NULL;
+		return ret;
+	}
+	inode = file_inode(data->scratch_file);
+	if (inode->i_sb->s_magic != EXT4_SUPER_MAGIC || !inode->i_sb->s_bdev ||
+	    inode->i_blkbits != 12 || IS_ENCRYPTED(inode)) {
+		ret = -EOPNOTSUPP;
+		goto err_file;
+	}
+	zero = kzalloc(FMP_BLK_SIZE, GFP_KERNEL);
+	if (!zero) {
+		ret = -ENOMEM;
+		goto err_file;
+	}
+	written = kernel_write(data->scratch_file, zero, FMP_BLK_SIZE, &pos);
+	kfree(zero);
+	if (written != FMP_BLK_SIZE) {
+		ret = written < 0 ? written : -EIO;
+		goto err_file;
+	}
+	ret = vfs_fsync(data->scratch_file, 0);
+	if (ret)
+		goto err_file;
+	data->sector = bmap(inode, 0);
+	if (!data->sector) {
+		ret = -EIO;
+		goto err_file;
+	}
+	data->bdev = blkdev_get_by_dev(inode->i_sb->s_bdev->bd_dev,
+				      FMODE_READ | FMODE_WRITE, NULL);
+	if (IS_ERR(data->bdev)) {
+		ret = PTR_ERR(data->bdev);
+		data->bdev = NULL;
+		goto err_file;
+	}
+	return 0;
+err_file:
+	fput(data->scratch_file);
+	data->scratch_file = NULL;
+	return ret;
+}
 
 /* test block device init for fmp test */
 struct fmp_test_data *fmp_test_init(struct exynos_fmp *fmp)
@@ -31,10 +104,7 @@ struct fmp_test_data *fmp_test_init(struct exynos_fmp *fmp)
 	struct fmp_test_data *data;
 	struct device *dev;
 	struct inode *inode;
-	struct super_block *sb;
-	unsigned long blocksize;
-	unsigned char blocksize_bits;
-	uint32_t count = 0;
+	int ret;
 
 	fmode_t fmode = FMODE_WRITE | FMODE_READ;
 
@@ -44,35 +114,33 @@ struct fmp_test_data *fmp_test_init(struct exynos_fmp *fmp)
 	}
 
 	dev = fmp->dev;
-	data = kmalloc(sizeof(struct fmp_test_data), GFP_KERNEL);
+	data = kzalloc(sizeof(struct fmp_test_data), GFP_KERNEL);
 	if (!data)
 		goto err;
-	do {
-		data->bdev = blkdev_get_by_path(FIPS_BLOCK_NAME, fmode, NULL);
-		if (IS_ERR(data->bdev)) {
-			dev_warn(dev, "retry blkdev_get_by_path = %d\n", count);
-			mdelay(100);
-			count++;
-			continue;
-		} else {
-			dev_info(dev, "FOUND fmp fips block = %d\n", count);
-			break;
-		}
-	} while (count < MAX_RETRY_COUNT);
-
+	data->bdev = blkdev_get_by_path(FIPS_BLOCK_NAME, fmode, NULL);
 	if (IS_ERR(data->bdev)) {
-		dev_err(dev, "%s: Fail to open block device\n", __func__);
-		goto err_data;
+		ret = PTR_ERR(data->bdev);
+		data->bdev = NULL;
+		if (ret != -ENOENT && ret != -ENOTDIR)
+			goto err_data;
+		ret = fmp_test_alloc_scratch(data);
+		if (ret) {
+			dev_err(dev, "%s: cannot allocate hardware-test scratch block: %d\n",
+				__func__, ret);
+			goto err_data;
+		}
+		dev_info(dev, "%s: using an allocated ext4 scratch block\n", __func__);
+		return data;
 	}
 	data->test_block_offset = 1;
 
 	inode = data->bdev->bd_inode;
-	sb = inode->i_sb;
-	blocksize = sb->s_blocksize;
-	blocksize_bits = sb->s_blocksize_bits;
-	data->sector =
-	    (i_size_read(inode) -
-	     (blocksize * data->test_block_offset)) >> blocksize_bits;
+	if (i_size_read(inode) < FMP_BLK_SIZE) {
+		blkdev_put(data->bdev, fmode);
+		goto err_data;
+	}
+	/* __getblk uses FMP_BLK_SIZE units, not the pseudo filesystem's size. */
+	data->sector = (i_size_read(inode) / FMP_BLK_SIZE) - 1;
 
 	return data;
 err_data:
@@ -108,8 +176,6 @@ int fmp_cipher_run(struct exynos_fmp *fmp, struct fmp_test_data *fdata,
 		ci->algo_mode = EXYNOS_FMP_BYPASS_MODE;
 	ci->algo_mode |= EXYNOS_FMP_ALGO_MODE_TEST;
 
-	get_bh(bh);
-
 	/* priv is diskc for crypto test. */
 	if (!priv) {
 		/* ci is fmp_test_data->ci */
@@ -137,6 +203,7 @@ int fmp_cipher_run(struct exynos_fmp *fmp, struct fmp_test_data *fdata,
 		}
 		memset(bh->b_data, 0, FMP_BLK_SIZE);
 	} else {
+		get_bh(bh);
 		lock_buffer(bh);
 		fmp_set_bh_compl_handler(bh);
 		submit_bh(REQ_OP_READ, REQ_SYNC | REQ_PRIO, bh);
@@ -211,12 +278,25 @@ err:
 void fmp_test_exit(struct fmp_test_data *fdata)
 {
 	fmode_t fmode = FMODE_WRITE | FMODE_READ;
+	struct buffer_head *bh;
 
 	if (!fdata) {
 		pr_err("%s: Invalid exynos fmp struct\n", __func__);
 		return;
 	}
+	if (fdata->scratch_file && fdata->bdev) {
+		bh = __find_get_block(fdata->bdev, fdata->sector, FMP_BLK_SIZE);
+		if (bh) {
+			lock_buffer(bh);
+			bh->b_private = NULL;
+			clear_buffer_uptodate(bh);
+			unlock_buffer(bh);
+			brelse(bh);
+		}
+	}
 	if (fdata->bdev)
 		blkdev_put(fdata->bdev, fmode);
+	if (fdata->scratch_file)
+		fput(fdata->scratch_file);
 	kzfree(fdata);
 }

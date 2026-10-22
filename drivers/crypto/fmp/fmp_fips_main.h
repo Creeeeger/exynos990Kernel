@@ -13,6 +13,7 @@
 #if defined(CONFIG_EXYNOS_FMP_FIPS)
 int exynos_fmp_fips_register(struct exynos_fmp *fmp);
 int exynos_fmp_fips_init(struct exynos_fmp *fmp);
+void exynos_fmp_fips_work(struct work_struct *work);
 void exynos_fmp_fips_test(struct exynos_fmp *fmp);
 void exynos_fmp_fips_deregister(struct exynos_fmp *fmp);
 int exynos_fmp_fips_integrity(struct exynos_fmp *fmp);

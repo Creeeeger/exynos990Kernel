@@ -15,6 +15,9 @@
 #include <linux/buffer_head.h>
 #include <linux/genhd.h>
 #include <linux/delay.h>
+#include <linux/cred.h>
+#include <linux/pid.h>
+#include <linux/sched/task.h>
 
 #include <crypto/authenc.h>
 #include <crypto/fmp.h>
@@ -36,25 +39,55 @@ enum fips_state {
 };
 
 static enum fips_state fmp_fips_state = FMP_FIPS_INIT_STATE;
+static DEFINE_MUTEX(fmp_fips_lock);
 
 bool in_fmp_fips_err(void)
 {
-	if (fmp_fips_state == FMP_FIPS_INIT_STATE ||
-	    fmp_fips_state == FMP_FIPS_ERR_STATE)
+	enum fips_state state = READ_ONCE(fmp_fips_state);
+
+	if (state == FMP_FIPS_INIT_STATE || state == FMP_FIPS_ERR_STATE)
 		return true;
 	return false;
 }
 
 bool in_fmp_fips_init(void)
 {
-	if (fmp_fips_state == FMP_FIPS_INIT_STATE)
+	if (READ_ONCE(fmp_fips_state) == FMP_FIPS_INIT_STATE)
 		return true;
 	return false;
 }
 
 static void set_fmp_fips_state(uint32_t val)
 {
-	fmp_fips_state = val;
+	WRITE_ONCE(fmp_fips_state, val);
+}
+
+void exynos_fmp_fips_work(struct work_struct *work)
+{
+	struct exynos_fmp *fmp = container_of(work, struct exynos_fmp, fips_work);
+	struct pid *pid = find_get_pid(1);
+	struct task_struct *init = get_pid_task(pid, PIDTYPE_PID);
+	struct cred *cred;
+	const struct cred *saved;
+	int ret;
+
+	put_pid(pid);
+	if (!init)
+		panic("FMP FIPS: init is unavailable for self-tests");
+	/* Use init's existing filesystem permissions, including its SELinux
+	 * domain. Workqueue credentials cannot create the private scratch file.
+	 * prepare_kernel_cred/override_creds also preserve Samsung KDP handling.
+	 */
+	cred = prepare_kernel_cred(init);
+	put_task_struct(init);
+	if (!cred)
+		panic("FMP FIPS: cannot allocate self-test credentials");
+	saved = override_creds(cred);
+	put_cred(cred);
+	ret = exynos_fmp_fips_init(fmp);
+	revert_creds(saved);
+	if (ret)
+		panic("FMP FIPS: cannot complete hardware self-tests (%d)", ret);
 }
 
 void exynos_fmp_fips_test(struct exynos_fmp *fmp)
@@ -69,13 +102,15 @@ int exynos_fmp_fips_init(struct exynos_fmp *fmp)
 {
 	int ret = 0;
 
-	set_fmp_fips_state(FMP_FIPS_PROGRESS_STATE);
-	dev_info(fmp->dev, "%s: Started!!\n", __func__);
-
 	if (!fmp || !fmp->dev) {
 		pr_err("%s: Invalid exynos fmp dev\n", __func__);
-		goto err;
+		return -EINVAL;
 	}
+	mutex_lock(&fmp_fips_lock);
+	if (smp_load_acquire(&fmp->result.overall) && !fmp->test_vops)
+		goto out_unlock;
+	set_fmp_fips_state(FMP_FIPS_PROGRESS_STATE);
+	dev_info(fmp->dev, "%s: Started!!\n", __func__);
 
 	fmp->test_data = fmp_test_init(fmp);
 	if (!fmp->test_data) {
@@ -92,23 +127,26 @@ int exynos_fmp_fips_init(struct exynos_fmp *fmp)
 		dev_info(fmp->dev, "%s: self-tests for FMP passed\n", __func__);
 	}
 
-	set_fmp_fips_state(FMP_FIPS_SUCCESS_STATE);
-	fmp->result.overall = 1;
 	fmp_test_exit(fmp->test_data);
-	return 0;
+	fmp->test_data = NULL;
+	set_fmp_fips_state(FMP_FIPS_SUCCESS_STATE);
+	smp_store_release(&fmp->result.overall, true);
+	goto out_unlock;
 err_data:
 #if defined(CONFIG_NODE_FOR_SELFTEST_FAIL)
 	set_fmp_fips_state(FMP_FIPS_ERR_STATE);
 	fmp->result.overall = 0;
 	fmp_test_exit(fmp->test_data);
-	return 0;
+	fmp->test_data = NULL;
+	goto out_unlock;
 #else
 	// return 0 if KAT function test mode
 	if (fmp->test_vops) {
 		set_fmp_fips_state(FMP_FIPS_ERR_STATE);
 		fmp->result.overall = 0;
 		fmp_test_exit(fmp->test_data);
-		return 0;
+		fmp->test_data = NULL;
+		goto out_unlock;
 	}
 	else {
 		panic("%s: Panic due to FMP self test for FIPS KAT", __func__);
@@ -116,7 +154,10 @@ err_data:
 #endif
 err:
 	set_fmp_fips_state(FMP_FIPS_ERR_STATE);
-	return -EINVAL;
+	ret = -EINVAL;
+out_unlock:
+	mutex_unlock(&fmp_fips_lock);
+	return ret;
 }
 
 int exynos_fmp_fips_integrity(struct exynos_fmp *fmp)

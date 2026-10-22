@@ -13,6 +13,7 @@
 #include <linux/platform_device.h>
 #include <linux/miscdevice.h>
 #include <linux/bio.h>
+#include <linux/workqueue.h>
 
 #define FMP_DRV_VERSION "3.0.1"
 
@@ -221,6 +222,8 @@ struct fips_result {
 struct fmp_test_data {
 	char block_type[FMP_BLOCK_TYPE_NAME_LEN];
 	struct block_device *bdev;
+	/* Pins an allocated, unlinked filesystem block while hardware KATs run. */
+	struct file *scratch_file;
 	sector_t sector;
 	dev_t devt;
 	uint32_t test_block_offset;
@@ -236,6 +239,7 @@ struct exynos_fmp {
 	struct fmp_test_data *test_data;
 #ifdef CONFIG_EXYNOS_FMP_FIPS
 	atomic_t fips_start;
+	struct work_struct fips_work;
 	struct fips_result result;
 	struct miscdevice miscdev;
 	void *test_vops;

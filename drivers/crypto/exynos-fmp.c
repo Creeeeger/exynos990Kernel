@@ -156,6 +156,7 @@ int exynos_fmp_fips_register(struct exynos_fmp *fmp)
 	}
 
 	fmp->miscdev.minor = MISC_DYNAMIC_MINOR;
+	INIT_WORK(&fmp->fips_work, exynos_fmp_fips_work);
 	fmp->miscdev.name = "fmp";
 	fmp->miscdev.fops = &fmp_fips_fops;
 	ret = misc_register(&fmp->miscdev);
@@ -184,6 +185,7 @@ err:
 
 void exynos_fmp_fips_deregister(struct exynos_fmp *fmp)
 {
+	cancel_work_sync(&fmp->fips_work);
 	sysfs_remove_group(&fmp->dev->kobj, &fmp_fips_attr_group);
 	misc_deregister(&fmp->miscdev);
 }
