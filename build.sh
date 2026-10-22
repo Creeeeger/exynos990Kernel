@@ -136,6 +136,9 @@ fi
 
 if [[ "$KSU_OPTION" == "y" ]]; then
     KSU=ksu.config
+    # Keep the reported identity aligned with the pinned official legacy source.
+    export KSU_VERSION_OVERRIDE=33315
+    export KSU_VERSION_TAG_OVERRIDE=legacy-0b17f242
 fi
 
 if [[ "$DTB_OPTION" == "y" ]]; then

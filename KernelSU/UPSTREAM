@@ -1,9 +1,10 @@
 Source: https://github.com/KernelSU-Next/KernelSU-Next
 Branch: legacy
 Upstream base: 0b17f24246db5c80c056b92c15bcad2b77f1276e
-Vendored snapshot: 8c2cfb684074fb169d971fc95ec0627d44e7cd37
-Nearest upstream release tag: v3.4.0-legacy
-KernelSU version code: 33321
+Upstream describe: v3.4.0-legacy-21-g0b17f242
+KernelSU version code: 33315
+KernelSU UAPI version: 6
+Manager: official CI build b427a3f9 (33405, UAPI 6)
 License: see LICENSE and the individual source headers.
 
 This directory is ordinary source tracked by the parent kernel repository.
@@ -11,6 +12,7 @@ It includes Samsung KDP credential overrides, DEFEX authorization, protected
 SELinux enforcement updates, per-task shell authorization, and the manual-hook
 preinit exclusion. A separate KernelSU repository or fork is not needed.
 
-kernel/version.mk preserves the snapshot's release identity in normal clones,
-shallow clones, and source archives. Update its metadata and this provenance
-record when importing a newer upstream base and reapplying the Samsung changes.
+kernel/version.mk pins the actual official legacy revision and uses the
+upstream version code, excluding local Samsung commits from the count.
+The ROM pins the compatible signed manager APK in prebuilts/kernelsu.
+Update source, identity and manager provenance together when upgrading.
