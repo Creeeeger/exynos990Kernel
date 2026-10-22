@@ -44,8 +44,7 @@ def check(path, requested=None):
     errors += [f"CONFIG_{name} must be disabled" for name in forbidden if values.get(name) in ("y", "m")]
     if values.get("KSU") == "y":
         ksu_required = ["KSU_MANUAL_HOOK"]
-        if wanted is None or all(values.get(name) == "y" for name in
-                                 ("SECURITY_DEFEX", "FASTUH_RKP", "KDP_CRED")):
+        if wanted is None or values.get("UH") == "y":
             ksu_required.append("KSU_SAMSUNG_SECURITY")
         for name in ksu_required:
             if values.get(name) != "y":

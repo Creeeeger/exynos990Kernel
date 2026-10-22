@@ -1511,9 +1511,12 @@ config FASTUH_RKP
 
 config KSU_SAMSUNG_SECURITY
 	bool
-	default y if KSU=y && SECURITY_DEFEX && FASTUH_RKP && KDP_CRED
+	default y if KSU=y && KSU_MANUAL_HOOK && SECURITY_DEFEX && UH && !UH_RKP && !FASTUH_RKP && !KDP_CRED
+	default y if KSU=y && KSU_MANUAL_HOOK && SECURITY_DEFEX && FASTUH_RKP && KDP_CRED
 	help
-	  Samsung integration uses protected credential updates and explicit
+	  Permit Samsung UH alone with KernelSU manual hooks and DEFEX.
+	  The FASTUH_RKP configuration additionally requires KDP_CRED and uses
+	  protected credential updates. Both configurations retain explicit
 	  DEFEX exceptions for KernelSU-authorized tasks.
 
 config UH_DEBUG
