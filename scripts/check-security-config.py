@@ -25,7 +25,7 @@ MITIGATE_SPECTRE_BRANCH_HISTORY UNMAP_KERNEL_AT_EL0
 SECURITY_DMESG_RESTRICT SECURITY_PERF_EVENTS_RESTRICT SECURITYFS
 SECURITY_NETWORK_XFRM SECURITY_PATH SECURITY_YAMA IMA IMA_APPRAISE EVM
 DM_INTEGRITY SECONDARY_TRUSTED_KEYRING SYSTEM_BLACKLIST_KEYRING
-BPF_UNPRIV_DEFAULT_OFF
+BPF BPF_SYSCALL CGROUP_BPF BPF_UNPRIV_DEFAULT_OFF
 """.split()
 FORBIDDEN = """
 CRYPTO_DISKCIPHER SECURITY_SELINUX_ALWAYS_PERMISSIVE CFI_PERMISSIVE
@@ -42,6 +42,9 @@ def check(path, requested=None):
     forbidden = FORBIDDEN if wanted is None else [name for name in FORBIDDEN if wanted.get(name) not in ("y", "m")]
     errors = [f"CONFIG_{name} must be y" for name in required if values.get(name) != "y"]
     errors += [f"CONFIG_{name} must be disabled" for name in forbidden if values.get(name) in ("y", "m")]
+    if values.get("UH_RKP") == "y" or values.get("FASTUH_RKP") == "y":
+        if values.get("BPF_JIT_ALWAYS_ON") == "y":
+            errors.append("CONFIG_BPF_JIT_ALWAYS_ON prevents the interpreter fallback required by RKP")
     if values.get("KSU") == "y":
         ksu_required = ["KSU_MANUAL_HOOK"]
         if wanted is None or values.get("UH") == "y":

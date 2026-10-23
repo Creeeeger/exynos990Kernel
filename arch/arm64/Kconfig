@@ -1508,6 +1508,7 @@ config FASTUH_RKP
 	default n
 	help
 	  it protects a kernel text and etc.
+	  BPF uses the interpreter because RKP disallows JIT-generated text.
 
 config KSU_SAMSUNG_SECURITY
 	bool

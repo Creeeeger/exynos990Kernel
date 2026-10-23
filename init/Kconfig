@@ -1696,9 +1696,12 @@ config BPF_SYSCALL
 config BPF_JIT_ALWAYS_ON
 	bool "Permanently enable BPF JIT and remove BPF interpreter"
 	depends on BPF_SYSCALL && HAVE_EBPF_JIT && BPF_JIT
+	depends on !UH_RKP && !FASTUH_RKP
 	help
 	  Enables BPF JIT and removes BPF interpreter to avoid
 	  speculative execution of BPF instructions by the interpreter
+	  Samsung RKP requires the interpreter because its executable-memory
+	  policy does not permit dynamically generated BPF code.
 
 config BPF_UNPRIV_DEFAULT_OFF
 	bool "Disable unprivileged BPF by default"

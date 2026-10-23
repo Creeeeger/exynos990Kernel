@@ -835,6 +835,15 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 	int image_size;
 	u8 *image_ptr;
 
+	/*
+	 * Keep Android's JIT sysctls, but use the normal interpreter fallback
+	 * when Samsung RKP does not permit dynamically generated kernel text.
+	 */
+	if (IS_ENABLED(CONFIG_UH_RKP) || IS_ENABLED(CONFIG_FASTUH_RKP)) {
+		pr_info_once("Samsung RKP: using the BPF interpreter\n");
+		return orig_prog;
+	}
+
 	if (!prog->jit_requested)
 		return orig_prog;
 
