@@ -4,6 +4,13 @@
  */
 
 #include <linux/linkage.h>
+
+/* These entries are called through the accelerator's function table. */
+#ifdef CONFIG_RKP_CFP_JOPP
+#define LZ4_ENTRY(name) NOP_ENTRY(name)
+#else
+#define LZ4_ENTRY(name) ENTRY(name)
+#endif
 #include <asm/assembler.h>
 
 /**
@@ -215,7 +222,7 @@
 .text
 .p2align 4
 
-ENTRY(_lz4_decompress_asm)
+LZ4_ENTRY(_lz4_decompress_asm)
 	lz4_decompress_asm_generic
 ENDPROC(_lz4_decompress_asm)
 
@@ -278,6 +285,6 @@ Copylength_table:
 
 .text
 .p2align 4
-ENTRY(_lz4_decompress_asm_noprfm)
+LZ4_ENTRY(_lz4_decompress_asm_noprfm)
 	lz4_decompress_asm_generic	0
 ENDPROC(_lz4_decompress_asm_noprfm)
