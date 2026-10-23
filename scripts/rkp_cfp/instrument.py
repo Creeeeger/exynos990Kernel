@@ -184,6 +184,9 @@ def instrument(objdump, func=None, skip=set([]), skip_stp=set([]), skip_asm=set(
 
 
     """
+    total_marked = multiprocessing.Value('L', 0)
+    total_calls = multiprocessing.Value('L', 0)
+
     def __instrument(func=None, start_func=None, end_func=None, start_i=None, end_i=None,
             tid=None):
         def parse_insn_range(i, r):
@@ -296,10 +299,17 @@ def instrument(objdump, func=None, skip=set([]), skip_stp=set([]), skip_asm=set(
                 instrument_stp(curfunc, func_i, i, insn, stp_x29_RRX_frame, 0)
                 continue
         objdump.flush()
+        with total_marked.get_lock():
+            total_marked.value += marked_entries
+        with total_calls.get_lock():
+            total_calls.value += protected_calls
         print("CFP worker {}: {} marked entries, {} protected indirect calls".format(
             tid, marked_entries, protected_calls), flush=True)
 
     objdump.each_insn_parallel(__instrument, threads)
+    if objdump.JOPP and func is None:
+        if not total_marked.value or not total_calls.value:
+            raise RuntimeError("JOPP instrumentation produced no marked entries or protected calls")
 
 class Objdump(object):
     """
@@ -398,7 +408,13 @@ class Objdump(object):
         """
         section_idx = None
         with open(tmp, 'r') as f:
-            for i, line in enumerate(f):
+            for line in f:
+                # LLVM exposes ELF mapping symbols as labels. They describe
+                # instruction/data encoding, not new function entry points.
+                label = re.search(common.fun_rec, line)
+                if label and re.match(r'^\$[xd](?:\.|$)', label.group('func_name')):
+                    continue
+                i = len(self.lines)
                 virt_addr = None
                 m = re.search(virt_addr_re, line)
                 if m:
@@ -596,8 +612,9 @@ class Objdump(object):
             assert i in i_set
         return i
     def get_func_end_idx(self, func, start_i=None):
-        i = self.get_func_idx(func, start_i)
-        while i < len(self.lines) and ( self.is_func(i) or self.is_insn(i) ):
+        i = self.get_func_idx(func, start_i) + 1
+        # Blank lines inside LLVM disassembly do not end a function.
+        while i < len(self.lines) and not self.is_func(i):
             i += 1
         return i - 1
     def func_offset(self, func, i=None):
@@ -607,7 +624,8 @@ class Objdump(object):
 
     PARSE_INSN_RE = re.compile((
         r'(?P<virt_addr>{hex_re}):\s+'
-        r'(?P<hex_insn>{hex_re})\s+'
+        # GNU objdump prints one word; LLVM prints four little-endian bytes.
+        r'(?P<hex_insn>(?:[a-f0-9]{{2}}\s+){{3}}[a-f0-9]{{2}}|[a-f0-9]{{8}})\s+'
         r'(?P<type>[^\s]+)\s*'
         ).format(hex_re=hex_re))
     def parse_insn(self, i):
@@ -627,6 +645,8 @@ class Objdump(object):
         """
         line = self.line(i)
         m = re.search(Objdump.PARSE_INSN_RE, line)
+        if m is None:
+            raise RuntimeError("Unsupported instruction format: " + line.strip())
         insn = m.groupdict()
         insn['virt_addr'] = _int(insn['virt_addr'])
         insn['binary'] = self.read(i)
