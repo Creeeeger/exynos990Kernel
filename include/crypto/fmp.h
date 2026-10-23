@@ -13,7 +13,6 @@
 #include <linux/platform_device.h>
 #include <linux/miscdevice.h>
 #include <linux/bio.h>
-#include <linux/workqueue.h>
 
 #define FMP_DRV_VERSION "3.0.1"
 
@@ -238,8 +237,6 @@ struct exynos_fmp {
 	enum fmp_disk_key_status status_disk_key;
 	struct fmp_test_data *test_data;
 #ifdef CONFIG_EXYNOS_FMP_FIPS
-	atomic_t fips_start;
-	struct work_struct fips_work;
 	struct fips_result result;
 	struct miscdevice miscdev;
 	void *test_vops;
@@ -288,6 +285,7 @@ enum smu_command {
 
 /* fmp functions */
 #if defined(CONFIG_MMC_DW_EXYNOS_FMP) || defined(CONFIG_SCSI_UFS_EXYNOS_FMP)
+int exynos_fmp_prepare_crypto(void);
 int exynos_fmp_fips(struct bio *bio);
 int exynos_fmp_bypass(struct fmp_request *req, struct bio *bio);
 int exynos_fmp_sec_cfg(int fmp_id, int smu_id, bool init);

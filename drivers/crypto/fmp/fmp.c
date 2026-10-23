@@ -53,6 +53,18 @@ static inline struct exynos_fmp *get_fmp(void)
 	return dev_get_drvdata(fmp_dev);
 }
 
+int exynos_fmp_prepare_crypto(void)
+{
+#ifdef CONFIG_EXYNOS_FMP_FIPS
+	if (!fmp_dev)
+		return -ENODEV;
+	return exynos_fmp_fips_prepare(get_fmp());
+#else
+	return 0;
+#endif
+}
+EXPORT_SYMBOL_GPL(exynos_fmp_prepare_crypto);
+
 static inline void dump_ci(struct fmp_crypto_info *c)
 {
 	if (c) {
@@ -364,12 +376,10 @@ int exynos_fmp_crypt(struct fmp_crypto_info *fmp_ci, void *priv)
 
 #ifdef CONFIG_EXYNOS_FMP_FIPS
 	if (!fips && !smp_load_acquire(&fmp->result.overall)) {
-		/* The UFS submission path cannot sleep. Keep encrypted requests
-		 * queued until real hardware self-tests finish in process context.
+		/* Preparation must finish before a request reaches this queue.
+		 * Retrying here would block the self-test's own filesystem I/O.
 		 */
-		if (atomic_cmpxchg(&fmp->fips_start, 0, 1) == 0)
-			schedule_work(&fmp->fips_work);
-		return -EAGAIN;
+		panic("FMP FIPS: encrypted I/O submitted before hardware self-tests completed");
 	}
 #endif
 
@@ -756,8 +766,6 @@ void *exynos_fmp_init(struct platform_device *pdev)
 	dev_info(fmp->dev, "Exynos FMP Version: %s\n", FMP_DRV_VERSION);
 
 #ifdef CONFIG_EXYNOS_FMP_FIPS
-	atomic_set(&fmp->fips_start, 0);
-
 	ret = exynos_fmp_fips_register(fmp);
 	if (ret) {
 		dev_err(fmp->dev, "%s: Fail to exynos_fmp_fips_register. ret(0x%x)",

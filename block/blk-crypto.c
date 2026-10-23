@@ -253,6 +253,10 @@ EXPORT_SYMBOL_GPL(blk_crypto_init_key);
  * Upper layers must call this function to ensure that either the hardware
  * supports the needed crypto settings, or the crypto API fallback has
  * transforms for the needed mode allocated and ready to go.
+ * Hardware preparation, including required self-tests, completes here before
+ * encrypted bios can be submitted. Preparation failures are returned directly.
+ *
+ * Context: Process context. May sleep and perform I/O.
  *
  * Return: 0 on success; -ENOPKG if the hardware doesn't support the crypto
  *	   settings and blk-crypto-fallback is either disabled or the needed
@@ -267,7 +271,7 @@ int blk_crypto_start_using_mode(enum blk_crypto_mode_num crypto_mode,
 	if (keyslot_manager_crypto_mode_supported(q->ksm, crypto_mode,
 						  dun_bytes, data_unit_size,
 						  is_hw_wrapped_key))
-		return 0;
+		return keyslot_manager_prepare_crypto(q->ksm);
 	if (is_hw_wrapped_key) {
 		pr_warn_once("hardware doesn't support wrapped keys\n");
 		return -EOPNOTSUPP;

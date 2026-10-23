@@ -223,6 +223,24 @@ void keyslot_manager_set_max_dun_bytes(struct keyslot_manager *ksm,
 }
 EXPORT_SYMBOL_GPL(keyslot_manager_set_max_dun_bytes);
 
+/**
+ * keyslot_manager_prepare_crypto() - Prepare hardware for encrypted I/O
+ * @ksm: The keyslot manager
+ *
+ * Context: Process context. The callback may sleep and perform I/O, so no
+ * keyslot manager lock is held. Drivers must serialize their own preparation.
+ * Return: 0 on success, or a preparation error. Errors must not fall back to
+ * software encryption to bypass a hardware self-test failure.
+ */
+int keyslot_manager_prepare_crypto(struct keyslot_manager *ksm)
+{
+	if (!ksm || !ksm->ksm_ll_ops.prepare_crypto)
+		return 0;
+	might_sleep();
+	return ksm->ksm_ll_ops.prepare_crypto(ksm);
+}
+EXPORT_SYMBOL_GPL(keyslot_manager_prepare_crypto);
+
 static inline struct hlist_head *
 hash_bucket_for_key(struct keyslot_manager *ksm,
 		    const struct blk_crypto_key *key)

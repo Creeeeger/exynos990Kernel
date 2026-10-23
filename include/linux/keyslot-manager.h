@@ -23,6 +23,10 @@ struct keyslot_manager;
 
 /**
  * struct keyslot_mgmt_ll_ops - functions to manage keyslots in hardware
+ * @prepare_crypto:	(Optional) Prepare the device before encrypted I/O is
+ *			submitted. Called from blk_crypto_start_using_mode() in
+ *			sleepable context without the keyslot manager lock held.
+ *			May perform I/O, e.g. hardware crypto self-tests.
  * @keyslot_program:	Program the specified key into the specified slot in the
  *			inline encryption hardware.
  * @keyslot_evict:	Evict key from the specified keyslot in the hardware.
@@ -38,6 +42,7 @@ struct keyslot_manager;
  * manager will use to manipulate keyslots in the hardware.
  */
 struct keyslot_mgmt_ll_ops {
+	int (*prepare_crypto)(struct keyslot_manager *ksm);
 	int (*keyslot_program)(struct keyslot_manager *ksm,
 			       const struct blk_crypto_key *key,
 			       unsigned int slot);
@@ -60,6 +65,8 @@ struct keyslot_manager *keyslot_manager_create(
 
 void keyslot_manager_set_max_dun_bytes(struct keyslot_manager *ksm,
 				       unsigned int max_dun_bytes);
+
+int keyslot_manager_prepare_crypto(struct keyslot_manager *ksm);
 
 int keyslot_manager_get_slot_for_key(struct keyslot_manager *ksm,
 				     const struct blk_crypto_key *key);

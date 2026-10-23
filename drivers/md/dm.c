@@ -2232,6 +2232,36 @@ struct queue_limits *dm_get_queue_limits(struct mapped_device *md)
 EXPORT_SYMBOL_GPL(dm_get_queue_limits);
 
 #ifdef CONFIG_BLK_INLINE_ENCRYPTION
+static int dm_prepare_crypto_callback(struct dm_target *ti, struct dm_dev *dev,
+				      sector_t start, sector_t len, void *data)
+{
+	return keyslot_manager_prepare_crypto(dev->bdev->bd_queue->ksm);
+}
+
+static int dm_prepare_crypto(struct keyslot_manager *ksm)
+{
+	struct mapped_device *md = keyslot_manager_private(ksm);
+	struct dm_table *t;
+	struct dm_target *ti;
+	int srcu_idx, i, err = 0;
+
+	t = dm_get_live_table(md, &srcu_idx);
+	if (!t) {
+		dm_put_live_table(md, srcu_idx);
+		return -ENODEV;
+	}
+	for (i = 0; i < dm_table_get_num_targets(t); i++) {
+		ti = dm_table_get_target(t, i);
+		if (!ti->type->iterate_devices)
+			continue;
+		err = ti->type->iterate_devices(ti, dm_prepare_crypto_callback, NULL);
+		if (err)
+			break;
+	}
+	dm_put_live_table(md, srcu_idx);
+	return err;
+}
+
 struct dm_keyslot_evict_args {
 	const struct blk_crypto_key *key;
 	int err;
@@ -2348,6 +2378,7 @@ static int dm_derive_raw_secret(struct keyslot_manager *ksm,
 }
 
 static struct keyslot_mgmt_ll_ops dm_ksm_ll_ops = {
+	.prepare_crypto = dm_prepare_crypto,
 	.keyslot_evict = dm_keyslot_evict,
 	.derive_raw_secret = dm_derive_raw_secret,
 };

@@ -193,7 +193,13 @@ static int fmp_ufshcd_complete_lrbp_crypto(struct ufs_hba *hba,
 	return 0;
 }
 
+static int fmp_ksm_prepare_crypto(struct keyslot_manager *ksm)
+{
+	return exynos_fmp_prepare_crypto();
+}
+
 static const struct keyslot_mgmt_ll_ops fmp_ksm_ops = {
+	.prepare_crypto = fmp_ksm_prepare_crypto,
 };
 
 static int fmp_ufshcd_hba_init_crypto(struct ufs_hba *hba,

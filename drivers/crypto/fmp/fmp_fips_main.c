@@ -62,20 +62,31 @@ static void set_fmp_fips_state(uint32_t val)
 	WRITE_ONCE(fmp_fips_state, val);
 }
 
-void exynos_fmp_fips_work(struct work_struct *work)
+int exynos_fmp_fips_prepare(struct exynos_fmp *fmp)
 {
-	struct exynos_fmp *fmp = container_of(work, struct exynos_fmp, fips_work);
-	struct pid *pid = find_get_pid(1);
-	struct task_struct *init = get_pid_task(pid, PIDTYPE_PID);
+	struct pid *pid;
+	struct task_struct *init;
 	struct cred *cred;
 	const struct cred *saved;
 	int ret;
 
+	might_sleep();
+	if (!fmp || !fmp->dev)
+		return -ENODEV;
+	/* Pairs with publishing the completed self-test result below. */
+	if (smp_load_acquire(&fmp->result.overall))
+		return 0;
+	if (in_fmp_fips_err())
+		return -EIO;
+
+	dev_info(fmp->dev, "FMP FIPS: preparing hardware self-tests before encrypted I/O\n");
+	pid = find_get_pid(1);
+	init = get_pid_task(pid, PIDTYPE_PID);
 	put_pid(pid);
 	if (!init)
 		panic("FMP FIPS: init is unavailable for self-tests");
 	/* Use init's existing filesystem permissions, including its SELinux
-	 * domain. Workqueue credentials cannot create the private scratch file.
+	 * domain. Callers need not have access to the private scratch directory.
 	 * prepare_kernel_cred/override_creds also preserve Samsung KDP handling.
 	 */
 	cred = prepare_kernel_cred(init);
@@ -88,6 +99,8 @@ void exynos_fmp_fips_work(struct work_struct *work)
 	revert_creds(saved);
 	if (ret)
 		panic("FMP FIPS: cannot complete hardware self-tests (%d)", ret);
+	dev_info(fmp->dev, "FMP FIPS: hardware self-tests complete; encrypted I/O ready\n");
+	return 0;
 }
 
 void exynos_fmp_fips_test(struct exynos_fmp *fmp)
