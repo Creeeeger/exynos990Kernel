@@ -56,6 +56,9 @@ DECLARE_BITMAP(cpu_hwcaps, ARM64_NCAPS);
 EXPORT_SYMBOL(cpu_hwcaps);
 
 DEFINE_PER_CPU_READ_MOSTLY(const char *, this_cpu_vector) = vectors;
+#if defined(CONFIG_ARM64_RKP_KPTI) && defined(CONFIG_MITIGATE_SPECTRE_BRANCH_HISTORY)
+DEFINE_PER_CPU_READ_MOSTLY(unsigned int, this_cpu_bhb_vector) = EL1_VECTOR_KPTI;
+#endif
 
 /*
  * Flag to indicate if we have computed the system wide

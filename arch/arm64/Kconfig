@@ -1533,6 +1533,13 @@ config UH_RKP
 	help
 	  it protects a kernel text and etc.
 
+config ARM64_RKP_KPTI
+	def_bool y
+	depends on UNMAP_KERNEL_AT_EL0 && (UH_RKP || FASTUH_RKP)
+	help
+	  Keep the KPTI trampoline within the single executable alias page
+	  supported by Samsung RKP, including per-CPU Spectre-BHB mitigations.
+
 config RKP_TEST
      bool "Enable RKP test"
      depends on !SAMSUNG_PRODUCT_SHIP && (UH_RKP || FASTUH_RKP)

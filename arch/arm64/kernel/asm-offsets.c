@@ -32,6 +32,7 @@
 #include <asm/signal32.h>
 #include <asm/smp_plat.h>
 #include <asm/suspend.h>
+#include <asm/vectors.h>
 #include <linux/kbuild.h>
 #include <linux/arm-smccc.h>
 
@@ -138,6 +139,11 @@ int main(void)
   BLANK();
 #ifdef CONFIG_UNMAP_KERNEL_AT_EL0
   DEFINE(TRAMP_VALIAS,		TRAMP_VALIAS);
+#if defined(CONFIG_ARM64_RKP_KPTI) && defined(CONFIG_MITIGATE_SPECTRE_BRANCH_HISTORY)
+  DEFINE(RKP_BHB_VECTOR_LOOP,	EL1_VECTOR_BHB_LOOP);
+  DEFINE(RKP_BHB_VECTOR_FW,	EL1_VECTOR_BHB_FW);
+  DEFINE(RKP_BHB_VECTOR_INSN,	EL1_VECTOR_BHB_CLEAR_INSN);
+#endif
 #endif
 #ifdef CONFIG_ARM_SDE_INTERFACE
   DEFINE(SDEI_EVENT_INTREGS,	offsetof(struct sdei_registered_event, interrupted_regs));

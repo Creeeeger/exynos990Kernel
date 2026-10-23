@@ -55,6 +55,9 @@ enum arm64_bp_harden_el1_vectors {
 
 /* The vectors to use on return from EL0. e.g. to remap the kernel */
 DECLARE_PER_CPU_READ_MOSTLY(const char *, this_cpu_vector);
+#if defined(CONFIG_ARM64_RKP_KPTI) && defined(CONFIG_MITIGATE_SPECTRE_BRANCH_HISTORY)
+DECLARE_PER_CPU_READ_MOSTLY(unsigned int, this_cpu_bhb_vector);
+#endif
 
 #ifndef CONFIG_UNMAP_KERNEL_AT_EL0
 #define TRAMP_VALIAS	0
@@ -64,7 +67,11 @@ static inline const char *
 arm64_get_bp_hardening_vector(enum arm64_bp_harden_el1_vectors slot)
 {
 	if (arm64_kernel_unmapped_at_el0())
+#ifdef CONFIG_ARM64_RKP_KPTI
+		return (char *)TRAMP_VALIAS;
+#else
 		return (char *)TRAMP_VALIAS + SZ_2K * slot;
+#endif
 
 	WARN_ON_ONCE(slot == EL1_VECTOR_KPTI);
 

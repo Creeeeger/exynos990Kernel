@@ -1073,6 +1073,7 @@ alternative_else_nop_endif
 #define BHB_MITIGATION_LOOP	1
 #define BHB_MITIGATION_FW	2
 #define BHB_MITIGATION_INSN	3
+#define BHB_MITIGATION_SHARED	4
 
 	.macro tramp_ventry, vector_start, regsize, kpti, bhb
 	.align	7
@@ -1105,6 +1106,10 @@ alternative_else_nop_endif
 2:
 	tramp_map_kernel	x30
 alternative_insn isb, nop, ARM64_WORKAROUND_QCOM_FALKOR_E1003
+	.if	\bhb == BHB_MITIGATION_SHARED
+	/* The stack is mapped; mitigate before either RET below. */
+	bl	__rkp_kpti_bhb
+	.endif
 	tramp_data_read_var	x30, vectors
 	prfm	plil1strm, [x30, #(1b - \vector_start)]
 	msr	vbar_el1, x30
@@ -1167,12 +1172,20 @@ alternative_endif
 	.pushsection ".entry.tramp.text", "ax"
 	.align	11
 ENTRY(tramp_vectors)
+#ifdef CONFIG_ARM64_RKP_KPTI
+#ifdef CONFIG_MITIGATE_SPECTRE_BRANCH_HISTORY
+	generate_tramp_vector	kpti=1, bhb=BHB_MITIGATION_SHARED
+#else
+	generate_tramp_vector	kpti=1, bhb=BHB_MITIGATION_NONE
+#endif
+#else
 #ifdef CONFIG_MITIGATE_SPECTRE_BRANCH_HISTORY
 	generate_tramp_vector	kpti=1, bhb=BHB_MITIGATION_LOOP
 	generate_tramp_vector	kpti=1, bhb=BHB_MITIGATION_FW
 	generate_tramp_vector	kpti=1, bhb=BHB_MITIGATION_INSN
 #endif /* CONFIG_MITIGATE_SPECTRE_BRANCH_HISTORY */
 	generate_tramp_vector	kpti=1, bhb=BHB_MITIGATION_NONE
+#endif /* CONFIG_ARM64_RKP_KPTI */
 END(tramp_vectors)
 
 ENTRY(tramp_exit_native)
@@ -1182,6 +1195,42 @@ END(tramp_exit_native)
 ENTRY(tramp_exit_compat)
 	tramp_exit	32
 END(tramp_exit_compat)
+
+#if defined(CONFIG_ARM64_RKP_KPTI) && defined(CONFIG_MITIGATE_SPECTRE_BRANCH_HISTORY)
+/*
+ * RKP's trampoline ABI permits one executable alias page. Share the vector
+ * table and select the same per-CPU BHB mitigation after mapping the stack.
+ * There must be no indirect branch before the selected mitigation completes.
+ */
+	.type __rkp_kpti_bhb, %function
+__rkp_kpti_bhb:
+	stp	x0, x30, [sp, #-16]!
+	tramp_data_read_var	x30, this_cpu_bhb_vector
+alternative_if_not ARM64_HAS_VIRT_HOST_EXTN
+	mrs	x0, tpidr_el1
+alternative_else
+	mrs	x0, tpidr_el2
+alternative_endif
+	ldr	w0, [x30, x0]
+	cmp	w0, #RKP_BHB_VECTOR_LOOP
+	b.eq	1f
+	cmp	w0, #RKP_BHB_VECTOR_FW
+	b.eq	2f
+	cmp	w0, #RKP_BHB_VECTOR_INSN
+	b.ne	3f
+	clearbhb
+	isb
+	b	3f
+1:
+	__mitigate_spectre_bhb_loop x30
+	b	3f
+2:
+	__mitigate_spectre_bhb_fw
+3:
+	ldp	x0, x30, [sp], #16
+	ret
+	.size __rkp_kpti_bhb, . - __rkp_kpti_bhb
+#endif
 
 	.ltorg
 	.popsection				// .entry.tramp.text
@@ -1198,6 +1247,10 @@ __entry_tramp_data___sdei_asm_handler:
 #endif /* CONFIG_ARM_SDE_INTERFACE */
 __entry_tramp_data_this_cpu_vector:
 	.quad	this_cpu_vector
+#if defined(CONFIG_ARM64_RKP_KPTI) && defined(CONFIG_MITIGATE_SPECTRE_BRANCH_HISTORY)
+__entry_tramp_data_this_cpu_bhb_vector:
+	.quad	this_cpu_bhb_vector
+#endif
 	.popsection				// .rodata
 #endif /* CONFIG_RANDOMIZE_BASE */
 #endif /* CONFIG_UNMAP_KERNEL_AT_EL0 */

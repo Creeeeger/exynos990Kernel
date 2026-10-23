@@ -105,6 +105,10 @@
 #include <linux/uh.h>
 #if (defined CONFIG_UH_RKP || defined CONFIG_FASTUH_RKP)
 #include <linux/rkp.h>
+#ifdef CONFIG_ARM64_RKP_KPTI
+#include <asm/fixmap.h>
+#include <asm/pgtable.h>
+#endif
 #endif
 #ifdef CONFIG_KDP_CRED
 #include <linux/kdp.h>
@@ -630,6 +634,13 @@ static void __init rkp_init(void)
 	rkp_init_data.init_mm_pgd = (u64)__pa(swapper_pg_dir);
 	rkp_init_data.id_map_pgd = (u64)__pa(idmap_pg_dir);
 	rkp_init_data.zero_pg_addr = (u64)__pa(empty_zero_page);
+#ifdef CONFIG_ARM64_RKP_KPTI
+	/* RKP must recognize both the isolated page table and its text alias. */
+	rkp_init_data.tramp_pgd = (u64)__pa_symbol(tramp_pg_dir);
+	rkp_init_data.tramp_valias = TRAMP_VALIAS;
+	pr_info("RKP: initializing KPTI trampoline (%zu bytes)\n",
+		entry_tramp_text_size());
+#endif
 #ifdef CONFIG_UH_RKP
 	uh_call(UH_APP_RKP, RKP_GET_RO_BITMAP, (u64)&rkp_s_bitmap_ro, 0, 0, 0);
 	uh_call(UH_APP_RKP, RKP_GET_DBL_BITMAP, (u64)&rkp_s_bitmap_dbl, 0, 0, 0);
