@@ -661,14 +661,15 @@ static bool is_memfd_file(struct file *file)
 	struct inode *inode;
 	struct inode *memfd_inode;
 
-	if (!file)
+	if (!file || !memfd_file)
 		return false;
 
 	memfd_inode = file_inode(memfd_file);
 	inode = file_inode(file);
+	/* Long names are stored outside the inline dentry name buffer. */
 	if (inode && memfd_inode && inode->i_sb == memfd_inode->i_sb)
 		if (file->f_path.dentry &&
-			!strncmp(file->f_path.dentry->d_iname, MFD_NAME_PREFIX,
+			!strncmp(file->f_path.dentry->d_name.name, MFD_NAME_PREFIX,
 							MFD_NAME_PREFIX_LEN))
 			return true;
 
