@@ -28,6 +28,9 @@
 #include <linux/notifier.h>
 #include <linux/bug.h>
 #include <linux/of_address.h>
+#if defined(CONFIG_PANEL_DISPLAY_MODE)
+#include <linux/panel_modes.h>
+#endif
 #include <linux/debugfs.h>
 #include <linux/pinctrl/consumer.h>
 #include <video/mipi_display.h>
@@ -3691,17 +3694,50 @@ static void decon_save_win_config_event(struct decon_device *decon,
 }
 
 #ifndef CONFIG_EXYNOS_SET_ACTIVE_WITH_EMPTY_WINDOW
+static int decon_resolve_passive_vrr(struct decon_device *decon, unsigned int fps)
+{
+#if defined(CONFIG_PANEL_DISPLAY_MODE)
+	struct exynos_panel_info *lcd = decon->lcd_info;
+	struct panel_display_modes *modes = lcd->panel_modes;
+	struct panel_display_mode *mode;
+	int resolved = -EINVAL;
+	unsigned int i;
+
+	if (!modes)
+		return -EINVAL;
+
+	/* Legacy panels use a discrete NS/HS mode, not the newer passive mode. */
+	for (i = 0; i < modes->num_modes; i++) {
+		mode = modes->modes[i];
+		if (mode->width != lcd->xres || mode->height != lcd->yres ||
+				mode->refresh_rate != fps ||
+				mode->refresh_mode > WIN_VRR_HS_MODE)
+			continue;
+
+		resolved = mode->refresh_mode;
+		if (mode->refresh_mode == lcd->vrr_mode)
+			break;
+	}
+
+	return resolved;
+#else
+	return -EOPNOTSUPP;
+#endif
+}
+
 static int decon_set_vrr(struct decon_device *decon,
 	struct decon_win_config_data *win_data, struct decon_reg_data *regs)
 {
 	unsigned int vrr_state;
+	int vrr_mode;
 	struct vrr_config_data  *vrr_config;
 
 	regs->fps_update = 0;
 	vrr_config = &regs->vrr_config;
 	vrr_state = win_data->config[DECON_WIN_UPDATE_IDX].state;
 	if ((vrr_state != DECON_WIN_STATE_VRR_NORMALMODE) &&
-		(vrr_state != DECON_WIN_STATE_VRR_HSMODE)) {
+		(vrr_state != DECON_WIN_STATE_VRR_HSMODE) &&
+		(vrr_state != DECON_WIN_STATE_VRR_PASSIVEMODE)) {
 		decon_err("[VRR] %s:invalid win_state(%x)\n",
 				__func__, vrr_state);
 		return -EINVAL;
@@ -3713,13 +3749,23 @@ static int decon_set_vrr(struct decon_device *decon,
 		return -EINVAL;
 	}
 
+	vrr_mode = (vrr_state == DECON_WIN_STATE_VRR_HSMODE) ?
+		WIN_VRR_HS_MODE : WIN_VRR_NORMAL_MODE;
+	if (vrr_state == DECON_WIN_STATE_VRR_PASSIVEMODE) {
+		vrr_mode = decon_resolve_passive_vrr(decon, win_data->fps);
+		if (vrr_mode < 0) {
+			decon_err("[VRR] %s:unsupported passive fps(%d)\n",
+					__func__, win_data->fps);
+			return vrr_mode;
+		}
+	}
+
 #if IS_ENABLED(CONFIG_EXYNOS_FPS_CHANGE_NOTIFY)
 	if (vrr_config->fps != win_data->fps)
 		notify_fps_change(win_data->fps);
 #endif
 	vrr_config->fps = win_data->fps;
-	vrr_config->mode = (vrr_state == DECON_WIN_STATE_VRR_HSMODE) ?
-		WIN_VRR_HS_MODE : WIN_VRR_NORMAL_MODE;
+	vrr_config->mode = vrr_mode;
 	regs->fps_update = VRR_UPDATE;
 	decon_info("[VRR] %s:%d%s\n",
 			__func__, vrr_config->fps,
