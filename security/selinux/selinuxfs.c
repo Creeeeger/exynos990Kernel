@@ -31,6 +31,7 @@
 #include <linux/uaccess.h>
 #include <linux/kobject.h>
 #include <linux/ctype.h>
+#include <linux/ksu_selinux.h>
 
 /* selinuxfs pseudo filesystem for exporting the security policy API.
    Based on the proc code and the fs/nfsd/nfsctl.c code. */
@@ -229,7 +230,13 @@ static const struct file_operations sel_handle_unknown_ops = {
 static int sel_open_handle_status(struct inode *inode, struct file *filp)
 {
 	struct selinux_fs_info *fsi = file_inode(filp)->i_sb->s_fs_info;
-	struct page    *status = selinux_kernel_status_page(fsi->state);
+	struct page *status;
+
+#ifdef CONFIG_KSU_RKP_SELINUX_HOOKS
+	if (ksu_selinux_hide_status_open(filp))
+		return 0;
+#endif
+	status = selinux_kernel_status_page(fsi->state);
 
 	if (!status)
 		return -ENOMEM;
@@ -787,7 +794,7 @@ static ssize_t (*const write_op[])(struct file *, char *, size_t) = {
 	[SEL_CONTEXT] = sel_write_context,
 };
 
-static ssize_t selinux_transaction_write(struct file *file, const char __user *buf, size_t size, loff_t *pos)
+static ssize_t selinux_transaction_write_raw(struct file *file, const char __user *buf, size_t size, loff_t *pos)
 {
 	ino_t ino = file_inode(file)->i_ino;
 	char *data;
@@ -806,6 +813,17 @@ static ssize_t selinux_transaction_write(struct file *file, const char __user *b
 		rv = size;
 	}
 	return rv;
+}
+
+static ssize_t selinux_transaction_write(struct file *file,
+		const char __user *buf, size_t size, loff_t *pos)
+{
+#ifdef CONFIG_KSU_RKP_SELINUX_HOOKS
+	return ksu_selinux_hide_transaction_write(file, buf, size, pos,
+						 selinux_transaction_write_raw);
+#else
+	return selinux_transaction_write_raw(file, buf, size, pos);
+#endif
 }
 
 static const struct file_operations transaction_ops = {

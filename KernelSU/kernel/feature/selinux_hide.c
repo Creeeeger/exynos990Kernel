@@ -12,6 +12,7 @@
 #include <linux/sched.h>
 #include <linux/proc_fs.h>
 #include <linux/kthread.h>
+#include <linux/ksu_selinux.h>
 
 #include "policy/feature.h"
 #include "ksu.h"
@@ -258,6 +259,10 @@ static int ksu_patch_fops_slot(void **slot, void *new_fn)
     struct page *page    = phys_to_page(__pa(base));
     void *w;
 
+    /* RKP uses built-in hooks; never create a writable alias of rodata. */
+    if (IS_ENABLED(CONFIG_KSU_RKP_SELINUX_HOOKS))
+        return -EOPNOTSUPP;
+
     if (!page)
         return -EFAULT;
 
@@ -287,7 +292,9 @@ static struct file_operations *ksu_resolve_fops(const char *path_str)
 static ssize_t (*orig_sel_write)(struct file *, const char __user *, size_t, loff_t *);
 static struct file_operations *g_sel_context_fops;
 
-static __nocfi ssize_t ksu_sel_write(struct file *file, const char __user *ubuf, size_t size, loff_t *pos)
+ssize_t ksu_selinux_hide_transaction_write(struct file *file,
+        const char __user *ubuf, size_t size, loff_t *pos,
+        ksu_selinux_write_fn original_write)
 {
     ino_t ino;
     char kbuf[256];
@@ -316,7 +323,7 @@ static __nocfi ssize_t ksu_sel_write(struct file *file, const char __user *ubuf,
         goto passthrough;
     }
 
-    ret = orig_sel_write(file, ubuf, size, pos);
+    ret = original_write(file, ubuf, size, pos);
     if (ret <= 0)
         return ret;
 
@@ -338,13 +345,22 @@ static __nocfi ssize_t ksu_sel_write(struct file *file, const char __user *ubuf,
     return ret;
 
 passthrough:
-    return orig_sel_write(file, ubuf, size, pos);
+    return original_write(file, ubuf, size, pos);
+}
+
+static __nocfi ssize_t ksu_sel_write(struct file *file,
+        const char __user *ubuf, size_t size, loff_t *pos)
+{
+    return ksu_selinux_hide_transaction_write(file, ubuf, size, pos,
+                                              orig_sel_write);
 }
 
 static ssize_t (*orig_proc_pid_attr_write)(struct file *, const char __user *, size_t, loff_t *) __read_mostly;
 static struct file_operations *g_proc_attr_fops;
 
-static __nocfi ssize_t ksu_proc_pid_attr_write(struct file *file, const char __user *ubuf, size_t size, loff_t *pos)
+ssize_t ksu_selinux_hide_proc_attr_write(struct file *file,
+        const char __user *ubuf, size_t size, loff_t *pos,
+        ksu_selinux_write_fn original_write)
 {
     char kbuf[128];
     size_t len;
@@ -370,13 +386,23 @@ static __nocfi ssize_t ksu_proc_pid_attr_write(struct file *file, const char __u
     }
 
 passthrough:
-    return orig_proc_pid_attr_write(file, ubuf, size, pos);
+    return original_write(file, ubuf, size, pos);
+}
+
+static __nocfi ssize_t ksu_proc_pid_attr_write(struct file *file,
+        const char __user *ubuf, size_t size, loff_t *pos)
+{
+    return ksu_selinux_hide_proc_attr_write(file, ubuf, size, pos,
+                                           orig_proc_pid_attr_write);
 }
 
 static void ksu_hook_proc_attr_write(void)
 {
     struct file_operations *fops;
     int ret;
+
+    if (IS_ENABLED(CONFIG_KSU_RKP_SELINUX_HOOKS))
+        return;
 
     if (orig_proc_pid_attr_write)
         return;
@@ -396,6 +422,9 @@ static void ksu_hook_transaction_write(void)
 {
     struct file_operations *fops;
     int ret;
+
+    if (IS_ENABLED(CONFIG_KSU_RKP_SELINUX_HOOKS))
+        return;
 
     if (orig_sel_write)
         return;
@@ -458,15 +487,22 @@ static int ksu_prepare_fake_status_page(void)
     return 0;
 }
 
-static __nocfi int ksu_status_open(struct inode *inode, struct file *filp)
+bool ksu_selinux_hide_status_open(struct file *filp)
 {
     if (likely(ksu_selinux_hide_enabled && current_uid().val >= 10000)) {
         struct page *fp = smp_load_acquire(&ksu_fake_status_page);
         if (fp) {
             filp->private_data = fp;
-            return 0;
+            return true;
         }
     }
+    return false;
+}
+
+static __nocfi int ksu_status_open(struct inode *inode, struct file *filp)
+{
+    if (ksu_selinux_hide_status_open(filp))
+        return 0;
     return orig_status_open(inode, filp);
 }
 
@@ -474,6 +510,9 @@ static void ksu_hook_status_open(void)
 {
     struct file_operations *fops;
     int ret;
+
+    if (IS_ENABLED(CONFIG_KSU_RKP_SELINUX_HOOKS))
+        return;
 
     if (orig_status_open)
         return;
@@ -564,6 +603,9 @@ void __init ksu_selinux_hide_init(void)
 {
     if (ksu_register_feature_handler(&selinux_hide_handler))
         pr_err("selinux_hide: register feature failed\n");
+
+    if (IS_ENABLED(CONFIG_KSU_RKP_SELINUX_HOOKS))
+        pr_info("selinux_hide: using built-in hooks for Samsung RKP\n");
 
     kthread_run(ksu_selinux_hide_init_thread, NULL, "ksu_selinux_hide");
 }

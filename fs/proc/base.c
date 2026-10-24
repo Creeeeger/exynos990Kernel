@@ -98,6 +98,7 @@
 #include <linux/proca.h>
 #include <linux/cpufreq_times.h>
 #include <linux/cn_proc.h>
+#include <linux/ksu_selinux.h>
 #include <trace/events/oom.h>
 #include "internal.h"
 #include "fd.h"
@@ -2624,7 +2625,7 @@ static ssize_t proc_pid_attr_read(struct file * file, char __user * buf,
 	return length;
 }
 
-static ssize_t proc_pid_attr_write(struct file * file, const char __user * buf,
+static ssize_t proc_pid_attr_write_raw(struct file * file, const char __user * buf,
 				   size_t count, loff_t *ppos)
 {
 	struct inode * inode = file_inode(file);
@@ -2678,6 +2679,17 @@ out_free:
 	kfree(page);
 out:
 	return rv;
+}
+
+static ssize_t proc_pid_attr_write(struct file *file, const char __user *buf,
+				 size_t count, loff_t *ppos)
+{
+#ifdef CONFIG_KSU_RKP_SELINUX_HOOKS
+	return ksu_selinux_hide_proc_attr_write(file, buf, count, ppos,
+					       proc_pid_attr_write_raw);
+#else
+	return proc_pid_attr_write_raw(file, buf, count, ppos);
+#endif
 }
 
 static const struct file_operations proc_pid_attr_operations = {

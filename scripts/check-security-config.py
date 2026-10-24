@@ -49,6 +49,8 @@ def check(path, requested=None):
         ksu_required = ["KSU_MANUAL_HOOK"]
         if wanted is None or values.get("UH") == "y":
             ksu_required.append("KSU_SAMSUNG_SECURITY")
+        if values.get("FASTUH_RKP") == "y":
+            ksu_required.append("KSU_RKP_SELINUX_HOOKS")
         for name in ksu_required:
             if values.get(name) != "y":
                 errors.append(f"CONFIG_{name} is required with KernelSU")

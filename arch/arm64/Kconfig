@@ -1512,13 +1512,20 @@ config FASTUH_RKP
 
 config KSU_SAMSUNG_SECURITY
 	bool
-	default y if KSU=y && KSU_MANUAL_HOOK && SECURITY_DEFEX && UH && !UH_RKP && !FASTUH_RKP && !KDP_CRED
-	default y if KSU=y && KSU_MANUAL_HOOK && SECURITY_DEFEX && FASTUH_RKP && KDP_CRED
+	default y if KSU=y && KSU_MANUAL_HOOK && SECURITY_DEFEX && UH && !UH_RKP
 	help
-	  Permit Samsung UH alone with KernelSU manual hooks and DEFEX.
-	  The FASTUH_RKP configuration additionally requires KDP_CRED and uses
-	  protected credential updates. Both configurations retain explicit
-	  DEFEX exceptions for KernelSU-authorized tasks.
+	  Permit Samsung UH and FASTUH_RKP with KernelSU manual hooks and
+	  explicit DEFEX exceptions for KernelSU-authorized tasks. Credential
+	  updates use the ordinary kernel API when KDP_CRED is disabled and
+	  the protected credential API when it is enabled.
+
+config KSU_RKP_SELINUX_HOOKS
+	def_bool y
+	depends on KSU_SAMSUNG_SECURITY && FASTUH_RKP
+	help
+	  Call KernelSU's SELinux handlers from the built-in filesystem paths.
+	  RKP protects their const operation tables, so runtime replacement
+	  through a writable alias must not be used.
 
 config UH_DEBUG
     bool "Enable micro hypervisor debug feature"
