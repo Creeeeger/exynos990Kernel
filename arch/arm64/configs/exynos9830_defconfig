@@ -22,10 +22,8 @@ CONFIG_THREAD_INFO_IN_TASK=y
 CONFIG_KVM=y
 CONFIG_VIRTUALIZATION=y
 
-# EL2 - can be enabled but need to patch el3_mon since calls are expected to be made from EL1
-# but now they are made from EL2 and el3_mon rejects that so EL level check needs to be 
-# expanded to accept EL2 calls or removed.
-# CONFIG_ARM64_VHE is not set
+# Firmware SMCs use the kernel EL1 conduit; the monitor is unchanged.
+CONFIG_ARM64_VHE=y
 
 # S2MPU - has to be removed since memory regions are not protected anymore since h-arx is gone.
 # If h-arx still exists and these are turned on, WiFi will be dead.

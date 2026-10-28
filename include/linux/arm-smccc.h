@@ -181,7 +181,8 @@ asmlinkage void __arm_smccc_hvc(unsigned long a0, unsigned long a1,
 /* SMCCC v1.1 implementation madness follows */
 #ifdef CONFIG_ARM64
 
-#define SMCCC_SMC_INST	"smc	#0"
+#include <asm/smc.h>
+#define SMCCC_SMC_INST	ARM64_SMC_INST
 #define SMCCC_HVC_INST	"hvc	#0"
 
 #elif defined(CONFIG_ARM)

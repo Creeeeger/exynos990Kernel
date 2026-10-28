@@ -13,6 +13,7 @@
 #include <linux/smc.h>
 
 #include <asm/assembler.h>
+#include <asm/smc.h>
 
 #define ESS_FLAG_IN	(1)
 #define ESS_FLAG_OUT	(3)
@@ -37,7 +38,7 @@ ENTRY(__exynos_smc)
 	ldp	x2, x3, [sp, #32]
 #endif
 	dsb	sy
-	smc	#0
+	arm64_smc
 #ifdef CONFIG_DEBUG_SNAPSHOT_LOGGING_SMC
 	stp	x0, x1, [sp, #16]
 	stp	x2, x3, [sp, #32]
@@ -67,7 +68,7 @@ ENTRY(exynos_smc_readsfr)
 	orr	w1, w1, #SMC_REG_CLASS_SFR_R
 	mov	w0, #SMC_CMD_REG
 	dsb	sy
-	smc	#0
+	arm64_smc
 	ldp	x1, x3, [sp], #16
 	cmp	x0, #0
 	b.ne	fail_read

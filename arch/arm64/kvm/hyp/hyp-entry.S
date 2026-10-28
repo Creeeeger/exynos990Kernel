@@ -25,6 +25,7 @@
 #include <asm/kvm_asm.h>
 #include <asm/kvm_mmu.h>
 #include <asm/mmu.h>
+#include <asm/smc.h>
 
 .macro save_caller_saved_regs_vect
 	/* x0 and x1 were saved in the vector entry */
@@ -161,7 +162,7 @@ alternative_cb_end
 	cbz	x0, wa2_end
 
 	mov	w0, #ARM_SMCCC_ARCH_WORKAROUND_2
-	smc	#0
+	arm64_smc_hyp
 
 	/* Don't leak data from the SMC call */
 	mov	x3, xzr
@@ -333,7 +334,7 @@ ENTRY(__smccc_workaround_1_smc_start)
 	stp	x2, x3, [sp, #(8 * 0)]
 	stp	x0, x1, [sp, #(8 * 2)]
 	mov	w0, #ARM_SMCCC_ARCH_WORKAROUND_1
-	smc	#0
+	arm64_smc_hyp
 	ldp	x2, x3, [sp, #(8 * 0)]
 	ldp	x0, x1, [sp, #(8 * 2)]
 	add	sp, sp, #(8 * 4)
@@ -345,7 +346,7 @@ ENTRY(__smccc_workaround_3_smc_start)
 	stp	x2, x3, [sp, #(8 * 0)]
 	stp	x0, x1, [sp, #(8 * 2)]
 	mov	w0, #ARM_SMCCC_ARCH_WORKAROUND_3
-	smc	#0
+	arm64_smc_hyp
 	ldp	x2, x3, [sp, #(8 * 0)]
 	ldp	x0, x1, [sp, #(8 * 2)]
 	add	sp, sp, #(8 * 4)

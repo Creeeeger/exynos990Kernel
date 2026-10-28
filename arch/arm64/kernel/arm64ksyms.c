@@ -79,6 +79,9 @@ NOKPROBE_SYMBOL(_mcount);
 	/* arm-smccc */
 EXPORT_SYMBOL(__arm_smccc_smc);
 EXPORT_SYMBOL(__arm_smccc_hvc);
+#ifdef ARM64_EXYNOS_VHE_SMC
+EXPORT_SYMBOL(__exynos_vhe_smc_el1);
+#endif
 
 	/* tishift.S */
 extern long long __ashlti3(long long a, int b);

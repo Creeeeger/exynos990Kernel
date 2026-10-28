@@ -179,9 +179,15 @@ alternative_cb_end
 	tbnz	\tmp2, #TIF_SSBD, .L__asm_ssbd_skip\@
 	mov	w0, #ARM_SMCCC_ARCH_WORKAROUND_2
 	mov	w1, #\state
+#ifdef ARM64_EXYNOS_VHE_SMC
+	stp	xzr, x30, [sp, #-16]!
+#endif
 alternative_cb	arm64_update_smccc_conduit
 	nop					// Patched to SMC/HVC #0
 alternative_cb_end
+#ifdef ARM64_EXYNOS_VHE_SMC
+	ldp	xzr, x30, [sp], #16
+#endif
 .L__asm_ssbd_skip\@:
 #endif
 	.endm
@@ -1299,7 +1305,7 @@ NOKPROBE(ret_from_fork)
 	/* On success, this call never returns... */
 	cmp	\exit_mode, #SDEI_EXIT_SMC
 	b.ne	99f
-	smc	#0
+	arm64_smc
 	b	.
 99:	hvc	#0
 	b	.

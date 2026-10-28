@@ -14,10 +14,15 @@
 #include <linux/linkage.h>
 #include <linux/arm-smccc.h>
 #include <asm/asm-offsets.h>
+#include <asm/smc.h>
 
 	.macro SMCCC instr
 	.cfi_startproc
+	.ifc \instr, smc
+	arm64_smc
+	.else
 	\instr	#0
+	.endif
 	ldr	x4, [sp]
 	stp	x0, x1, [x4, #ARM_SMCCC_RES_X0_OFFS]
 	stp	x2, x3, [x4, #ARM_SMCCC_RES_X2_OFFS]

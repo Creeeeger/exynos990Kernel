@@ -20,6 +20,7 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/smc.h>
+#include <asm/smc.h>
 
 #define HWRNG_RET_OK			0
 #define HWRNG_RET_INVALID_ERROR		1
@@ -79,7 +80,7 @@ static int exynos_cm_smc(uint64_t *arg0, uint64_t *arg1,
 	register uint64_t reg3 __asm__("x3") = *arg3;
 
 	__asm__ volatile (
-		"smc    0\n"
+		ARM64_SMC_INST
 		: "+r"(reg0), "+r"(reg1), "+r"(reg2), "+r"(reg3)
 	);
 

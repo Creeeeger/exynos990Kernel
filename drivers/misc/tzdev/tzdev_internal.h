@@ -28,12 +28,14 @@
 #define TZDEV_DRIVER_CODE		TZDEV_DRIVER_VERSION(3,0,0)
 
 #define SMC_NO(x)			"" # x
-#define SMC(x)				"smc " SMC_NO(x)
 
 #if defined(CONFIG_ARM)
+#define SMC(x)				"smc " SMC_NO(x)
 #define REGISTERS_NAME	"r"
 #define ARCH_EXTENSION	".arch_extension sec\n"
 #elif defined(CONFIG_ARM64)
+#include <asm/smc.h>
+#define SMC(x)				ARM64_SMC_INST
 #define REGISTERS_NAME	"x"
 #define ARCH_EXTENSION	""
 #endif /* CONFIG_ARM */

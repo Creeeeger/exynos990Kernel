@@ -25,6 +25,7 @@
 #include <mali_kbase_smc.h>
 
 #include <linux/compiler.h>
+#include <asm/smc.h>
 
 /* __asmeq is not available on Kernel versions >= 4.20 */
 #ifndef __asmeq
@@ -51,7 +52,7 @@ static noinline u64 invoke_smc_fid(u64 function_id,
 			__asmeq("%1", "x1")
 			__asmeq("%2", "x2")
 			__asmeq("%3", "x3")
-			"smc    #0\n"
+			ARM64_SMC_INST
 			: "+r" (x0)
 			: "r" (x1), "r" (x2), "r" (x3));
 

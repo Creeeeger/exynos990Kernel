@@ -118,6 +118,30 @@ static void __copy_hyp_vect_bpi(int slot, const char *hyp_vecs_start,
 	for (i = 0; i < SZ_2K; i += 0x80)
 		memcpy(dst + i, hyp_vecs_start, hyp_vecs_end - hyp_vecs_start);
 
+#ifdef ARM64_EXYNOS_VHE_SMC
+	/* Keep the EL1 conduit call direct after copying a hardening snippet.
+	 * The writable linear alias differs from its executing image address.
+	 */
+	for (i = 0; i < SZ_2K; i += 0x80) {
+		unsigned long offset;
+
+		for (offset = 0; offset < hyp_vecs_end - hyp_vecs_start; offset += 4) {
+			unsigned long src = (unsigned long)hyp_vecs_start + offset;
+			unsigned long pc = (unsigned long)__bp_harden_hyp_vecs_start +
+					   slot * SZ_2K + i + offset;
+			u32 insn = le32_to_cpup((__le32 *)src);
+
+			if (aarch64_insn_is_bl(insn) &&
+			    src + aarch64_get_branch_offset(insn) ==
+			    (unsigned long)__exynos_vhe_smc_el1) {
+				insn = aarch64_insn_gen_branch_imm(pc,
+					(unsigned long)__exynos_vhe_smc_el1,
+					AARCH64_INSN_BRANCH_LINK);
+				*(__le32 *)(dst + i + offset) = cpu_to_le32(insn);
+			}
+		}
+	}
+#endif
 	__flush_icache_range((uintptr_t)dst, (uintptr_t)dst + SZ_2K);
 }
 
@@ -309,7 +333,13 @@ void __init arm64_update_smccc_conduit(struct alt_instr *alt,
 		insn = aarch64_insn_get_hvc_value();
 		break;
 	case PSCI_CONDUIT_SMC:
+#ifdef ARM64_EXYNOS_VHE_SMC
+		insn = aarch64_insn_gen_branch_imm((unsigned long)origptr,
+				(unsigned long)__exynos_vhe_smc_el1,
+				AARCH64_INSN_BRANCH_LINK);
+#else
 		insn = aarch64_insn_get_smc_value();
+#endif
 		break;
 	default:
 		return;

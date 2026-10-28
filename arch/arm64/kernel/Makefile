@@ -46,6 +46,9 @@ arm64-obj-$(CONFIG_CPU_IDLE)		+= cpuidle.o
 arm64-obj-$(CONFIG_JUMP_LABEL)		+= jump_label.o
 arm64-obj-$(CONFIG_KGDB)		+= kgdb.o
 arm64-obj-$(CONFIG_ARCH_EXYNOS)         += exynos-smc.o
+ifeq ($(CONFIG_SOC_EXYNOS9830),y)
+arm64-obj-$(CONFIG_ARM64_VHE)		+= vhe-smc-el1.o vhe-smc-debug.o
+endif
 arm64-obj-$(CONFIG_EFI)			+= efi.o efi-entry.stub.o		\
 					   efi-rt-wrapper.o
 arm64-obj-$(CONFIG_PCI)			+= pci.o
