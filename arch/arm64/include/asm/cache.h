@@ -29,6 +29,17 @@
 #define CTR_IDC_SHIFT		28
 #define CTR_DIC_SHIFT		29
 
+#define CLIDR_LOUIS_SHIFT	21
+#define CLIDR_LOC_SHIFT		24
+#define CLIDR_LOUU_SHIFT		27
+#define CLIDR_LOUIS(clidr)	(((clidr) >> CLIDR_LOUIS_SHIFT) & 7)
+#define CLIDR_LOC(clidr)		(((clidr) >> CLIDR_LOC_SHIFT) & 7)
+#define CLIDR_LOUU(clidr)		(((clidr) >> CLIDR_LOUU_SHIFT) & 7)
+#define CLIDR_CTYPE_SHIFT(level)	(3 * ((level) - 1))
+#define CLIDR_CTYPE_MASK(level)	(7 << CLIDR_CTYPE_SHIFT(level))
+#define CLIDR_CTYPE(clidr, level)	\
+	(((clidr) & CLIDR_CTYPE_MASK(level)) >> CLIDR_CTYPE_SHIFT(level))
+
 #define CTR_CACHE_MINLINE_MASK	\
 	(0xf << CTR_DMINLINE_SHIFT | CTR_IMINLINE_MASK << CTR_IMINLINE_SHIFT)
 

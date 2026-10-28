@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2012,2013 - ARM Ltd
  * Author: Marc Zyngier <marc.zyngier@arm.com>
+ * Cache configuration normalization: Copyright (C) 2023 Akihiko Odaki
  *
  * Derived from arch/arm/kvm/coproc.c:
  * Copyright (C) 2012 - Virtual Open Systems and Columbia University
@@ -21,9 +22,11 @@
  */
 
 #include <linux/bsearch.h>
+#include <linux/cacheinfo.h>
 #include <linux/kvm_host.h>
 #include <linux/mm.h>
 #include <linux/printk.h>
+#include <linux/slab.h>
 #include <linux/uaccess.h>
 
 #include <asm/cacheflush.h>
@@ -91,7 +94,6 @@ u64 vcpu_read_sys_reg(struct kvm_vcpu *vcpu, int reg)
 	 * thread when emulating cross-VCPU communication.
 	 */
 	switch (reg) {
-	case CSSELR_EL1:	return read_sysreg_s(SYS_CSSELR_EL1);
 	case SCTLR_EL1:		return read_sysreg_s(sctlr_EL12);
 	case ACTLR_EL1:		return read_sysreg_s(SYS_ACTLR_EL1);
 	case CPACR_EL1:		return read_sysreg_s(cpacr_EL12);
@@ -134,7 +136,6 @@ void vcpu_write_sys_reg(struct kvm_vcpu *vcpu, u64 val, int reg)
 	 * set once, before running the VCPU, and never changed later.
 	 */
 	switch (reg) {
-	case CSSELR_EL1:	write_sysreg_s(val, SYS_CSSELR_EL1);	return;
 	case SCTLR_EL1:		write_sysreg_s(val, sctlr_EL12);	return;
 	case ACTLR_EL1:		write_sysreg_s(val, SYS_ACTLR_EL1);	return;
 	case CPACR_EL1:		write_sysreg_s(val, cpacr_EL12);	return;
@@ -163,25 +164,64 @@ immediate_write:
 	 __vcpu_sys_reg(vcpu, reg) = val;
 }
 
-/* 3 bits per cache level, as per CLIDR, but non-existent caches always 0 */
-static u32 cache_levels;
-
 /* CSSELR values; used to index KVM_REG_ARM_DEMUX_ID_CCSIDR */
-#define CSSELR_MAX 12
+#define CSSELR_MAX 14
+#define CCSIDR_LINESIZE_MASK GENMASK(2, 0)
+
+/* Log2(bytes), derived from the system-wide safe CTR_EL0 value. */
+static u8 get_min_cache_line_size(bool icache)
+{
+	u64 ctr = read_sanitised_ftr_reg(SYS_CTR_EL0);
+	u8 shift = icache ? CTR_IMINLINE_SHIFT : CTR_DMINLINE_SHIFT;
+
+	return ((ctr >> shift) & 0xf) + 2;
+}
 
 /* Which cache CCSIDR represents depends on CSSELR value. */
-static u32 get_ccsidr(u32 csselr)
+static u32 get_ccsidr(struct kvm_vcpu *vcpu, u32 csselr)
 {
-	u32 ccsidr;
+	if (vcpu->arch.ccsidr)
+		return vcpu->arch.ccsidr[csselr];
 
-	/* Make sure noone else changes CSSELR during this! */
-	local_irq_disable();
-	write_sysreg(csselr, csselr_el1);
-	isb();
-	ccsidr = read_sysreg(ccsidr_el1);
-	local_irq_enable();
+	/*
+	 * Normalize cache geometry as in upstream 7af0c2534f4c. Never read
+	 * the current physical CPU's CCSIDR: it changes across clusters.
+	 * One set and one way also minimizes trapped set/way operations;
+	 * access_dcsw() retains the existing whole-guest flush handling.
+	 */
+	return get_min_cache_line_size(csselr & 1) - 4;
+}
 
-	return ccsidr;
+static int set_ccsidr(struct kvm_vcpu *vcpu, u32 csselr, u32 val)
+{
+	u8 line_size = (val & CCSIDR_LINESIZE_MASK) + 4;
+	u32 *ccsidr = vcpu->arch.ccsidr;
+	u32 i;
+
+	/* Retain old VMM cache geometry, subject to the safe line size. */
+	if (line_size < get_min_cache_line_size(csselr & 1))
+		return -EINVAL;
+
+	if (!ccsidr) {
+		if (val == get_ccsidr(vcpu, csselr))
+			return 0;
+
+		ccsidr = kmalloc_array(CSSELR_MAX, sizeof(*ccsidr), GFP_KERNEL);
+		if (!ccsidr)
+			return -ENOMEM;
+
+		for (i = 0; i < CSSELR_MAX; i++)
+			ccsidr[i] = get_ccsidr(vcpu, i);
+		vcpu->arch.ccsidr = ccsidr;
+	}
+
+	ccsidr[csselr] = val;
+	return 0;
+}
+
+void kvm_arch_vcpu_uninit(struct kvm_vcpu *vcpu)
+{
+	kfree(vcpu->arch.ccsidr);
 }
 
 /*
@@ -1032,6 +1072,71 @@ static bool access_cntp_cval(struct kvm_vcpu *vcpu,
 	return true;
 }
 
+static bool access_ctr(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
+		       const struct sys_reg_desc *r)
+{
+	if (p->is_write)
+		return write_to_read_only(vcpu, p, r);
+
+	p->regval = read_sanitised_ftr_reg(SYS_CTR_EL0);
+	return true;
+}
+
+static bool access_clidr(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
+			 const struct sys_reg_desc *r)
+{
+	if (p->is_write)
+		return write_to_read_only(vcpu, p, r);
+
+	p->regval = __vcpu_sys_reg(vcpu, CLIDR_EL1);
+	return true;
+}
+
+static void reset_clidr(struct kvm_vcpu *vcpu, const struct sys_reg_desc *r)
+{
+	u64 ctr = read_sanitised_ftr_reg(SYS_CTR_EL0);
+	u64 clidr;
+	u8 loc;
+
+	/* Describe the cache maintenance required by the sanitized CTR. */
+	if (ctr & BIT(CTR_IDC_SHIFT)) {
+		loc = (ctr & BIT(CTR_DIC_SHIFT)) ? 1 : 2;
+		clidr = (u64)CACHE_TYPE_UNIFIED << CLIDR_CTYPE_SHIFT(loc);
+	} else {
+		loc = 1;
+		clidr = 1ULL << CLIDR_LOUU_SHIFT;
+		clidr |= 1ULL << CLIDR_LOUIS_SHIFT;
+		clidr |= (u64)CACHE_TYPE_DATA << CLIDR_CTYPE_SHIFT(1);
+	}
+	if (!(ctr & BIT(CTR_DIC_SHIFT)))
+		clidr |= (u64)CACHE_TYPE_INST << CLIDR_CTYPE_SHIFT(1);
+	clidr |= (u64)loc << CLIDR_LOC_SHIFT;
+	__vcpu_sys_reg(vcpu, r->reg) = clidr;
+}
+
+static bool access_csselr(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
+			  const struct sys_reg_desc *r)
+{
+	if (p->is_write)
+		__vcpu_sys_reg(vcpu, CSSELR_EL1) = p->regval;
+	else
+		p->regval = __vcpu_sys_reg(vcpu, CSSELR_EL1);
+	return true;
+}
+
+static bool access_ccsidr(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
+			  const struct sys_reg_desc *r)
+{
+	u32 csselr = __vcpu_sys_reg(vcpu, CSSELR_EL1) & 0xf;
+
+	if (p->is_write)
+		return write_to_read_only(vcpu, p, r);
+
+	/* A selection without an architected cache may return UNKNOWN. */
+	p->regval = csselr < CSSELR_MAX ? get_ccsidr(vcpu, csselr) : 0;
+	return true;
+}
+
 /* Read a sanitised cpufeature ID register by sys_reg_desc */
 static u64 read_id_reg(struct sys_reg_desc const *r, bool raz)
 {
@@ -1049,6 +1154,11 @@ static u64 read_id_reg(struct sys_reg_desc const *r, bool raz)
 			kvm_debug("LORegions unsupported for guests, suppressing\n");
 
 		val &= ~(0xfUL << ID_AA64MMFR1_LOR_SHIFT);
+	} else if (id == SYS_ID_AA64MMFR2_EL1) {
+		/* The KVM CCSIDR ABI uses the original 32-bit layout. */
+		val &= ~(0xfUL << ID_AA64MMFR2_CCIDX_SHIFT);
+	} else if (id == SYS_ID_MMFR4_EL1) {
+		val &= ~(0xfUL << ID_MMFR4_CCIDX_SHIFT);
 	} else if (id == SYS_ID_AA64DFR0_EL1) {
 		/* Limit guests to PMUv3 for ARMv8.1 */
 		val = cpuid_feature_cap_perfmon_field(val,
@@ -1095,6 +1205,25 @@ static bool access_raz_id_reg(struct kvm_vcpu *vcpu,
 static int reg_from_user(u64 *val, const void __user *uaddr, u64 id);
 static int reg_to_user(void __user *uaddr, const u64 *val, u64 id);
 static u64 sys_reg_to_index(const struct sys_reg_desc *reg);
+
+static int set_clidr(struct kvm_vcpu *vcpu, const struct sys_reg_desc *rd,
+		     const struct kvm_one_reg *reg, void __user *uaddr)
+{
+	u64 ctr = read_sanitised_ftr_reg(SYS_CTR_EL0);
+	u64 val;
+	bool idc;
+	int err = reg_from_user(&val, uaddr, reg->id);
+
+	if (err)
+		return err;
+	idc = !CLIDR_LOC(val) || (!CLIDR_LOUIS(val) && !CLIDR_LOUU(val));
+	/* No MTE/tag-cache fields are supported by this kernel. */
+	if ((val & GENMASK_ULL(63, 33)) || (!(ctr & BIT(CTR_IDC_SHIFT)) && idc))
+		return -EINVAL;
+
+	__vcpu_sys_reg(vcpu, rd->reg) = val;
+	return 0;
+}
 
 /*
  * cpufeature ID register user accessors
@@ -1371,7 +1500,13 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 
 	{ SYS_DESC(SYS_CNTKCTL_EL1), NULL, reset_val, CNTKCTL_EL1, 0},
 
-	{ SYS_DESC(SYS_CSSELR_EL1), NULL, reset_unknown, CSSELR_EL1 },
+	{ SYS_DESC(SYS_CCSIDR_EL1), access_ccsidr },
+	{ SYS_DESC(SYS_CLIDR_EL1), access_clidr, reset_clidr, CLIDR_EL1,
+	  .set_user = set_clidr },
+	{ SYS_DESC(SYS_CCSIDR2_EL1), trap_undef },
+	{ SYS_DESC(SYS_SMIDR_EL1), trap_undef },
+	{ SYS_DESC(SYS_CSSELR_EL1), access_csselr, reset_unknown, CSSELR_EL1 },
+	{ SYS_DESC(SYS_CTR_EL0), access_ctr },
 
 	{ SYS_DESC(SYS_PMCR_EL0), access_pmcr, reset_pmcr, PMCR_EL0 },
 	{ SYS_DESC(SYS_PMCNTENSET_EL0), access_pmcnten, reset_unknown, PMCNTENSET_EL0 },
@@ -1671,6 +1806,7 @@ static const struct sys_reg_desc cp14_64_regs[] = {
  * register).
  */
 static const struct sys_reg_desc cp15_regs[] = {
+	{ Op1(0), CRn(0), CRm(0), Op2(1), access_ctr },
 	{ Op1( 0), CRn( 1), CRm( 0), Op2( 0), access_vm_reg, NULL, c1_SCTLR },
 	{ Op1( 0), CRn( 2), CRm( 0), Op2( 0), access_vm_reg, NULL, c2_TTBR0 },
 	{ Op1( 0), CRn( 2), CRm( 0), Op2( 1), access_vm_reg, NULL, c2_TTBR1 },
@@ -1789,6 +1925,11 @@ static const struct sys_reg_desc cp15_regs[] = {
 	PMU_PMEVTYPER(30),
 	/* PMCCFILTR */
 	{ Op1(0), CRn(14), CRm(15), Op2(7), access_pmu_evtyper },
+
+	{ Op1(1), CRn(0), CRm(0), Op2(0), access_ccsidr },
+	{ Op1(1), CRn(0), CRm(0), Op2(1), access_clidr },
+	{ Op1(1), CRn(0), CRm(0), Op2(2), trap_undef },
+	{ Op1(2), CRn(0), CRm(0), Op2(0), access_csselr },
 };
 
 static const struct sys_reg_desc cp15_64_regs[] = {
@@ -2220,16 +2361,18 @@ static const struct sys_reg_desc *index_to_sys_reg_desc(struct kvm_vcpu *vcpu,
 	}
 
 FUNCTION_INVARIANT(midr_el1)
-FUNCTION_INVARIANT(ctr_el0)
 FUNCTION_INVARIANT(revidr_el1)
-FUNCTION_INVARIANT(clidr_el1)
 FUNCTION_INVARIANT(aidr_el1)
+
+static void get_ctr_el0(struct kvm_vcpu *v, const struct sys_reg_desc *r)
+{
+	((struct sys_reg_desc *)r)->val = read_sanitised_ftr_reg(SYS_CTR_EL0);
+}
 
 /* ->val is filled in by kvm_sys_reg_table_init() */
 static struct sys_reg_desc invariant_sys_regs[] = {
 	{ SYS_DESC(SYS_MIDR_EL1), NULL, get_midr_el1 },
 	{ SYS_DESC(SYS_REVIDR_EL1), NULL, get_revidr_el1 },
-	{ SYS_DESC(SYS_CLIDR_EL1), NULL, get_clidr_el1 },
 	{ SYS_DESC(SYS_AIDR_EL1), NULL, get_aidr_el1 },
 	{ SYS_DESC(SYS_CTR_EL0), NULL, get_ctr_el0 },
 };
@@ -2284,33 +2427,7 @@ static int set_invariant_sys_reg(u64 id, void __user *uaddr)
 	return 0;
 }
 
-static bool is_valid_cache(u32 val)
-{
-	u32 level, ctype;
-
-	if (val >= CSSELR_MAX)
-		return false;
-
-	/* Bottom bit is Instruction or Data bit.  Next 3 bits are level. */
-	level = (val >> 1);
-	ctype = (cache_levels >> (level * 3)) & 7;
-
-	switch (ctype) {
-	case 0: /* No cache */
-		return false;
-	case 1: /* Instruction cache only */
-		return (val & 1);
-	case 2: /* Data cache only */
-	case 4: /* Unified cache */
-		return !(val & 1);
-	case 3: /* Separate instruction and data caches */
-		return true;
-	default: /* Reserved: we can't know instruction or data. */
-		return false;
-	}
-}
-
-static int demux_c15_get(u64 id, void __user *uaddr)
+static int demux_c15_get(struct kvm_vcpu *vcpu, u64 id, void __user *uaddr)
 {
 	u32 val;
 	u32 __user *uval = uaddr;
@@ -2326,16 +2443,16 @@ static int demux_c15_get(u64 id, void __user *uaddr)
 			return -ENOENT;
 		val = (id & KVM_REG_ARM_DEMUX_VAL_MASK)
 			>> KVM_REG_ARM_DEMUX_VAL_SHIFT;
-		if (!is_valid_cache(val))
+		if (val >= CSSELR_MAX)
 			return -ENOENT;
 
-		return put_user(get_ccsidr(val), uval);
+		return put_user(get_ccsidr(vcpu, val), uval);
 	default:
 		return -ENOENT;
 	}
 }
 
-static int demux_c15_set(u64 id, void __user *uaddr)
+static int demux_c15_set(struct kvm_vcpu *vcpu, u64 id, void __user *uaddr)
 {
 	u32 val, newval;
 	u32 __user *uval = uaddr;
@@ -2351,16 +2468,13 @@ static int demux_c15_set(u64 id, void __user *uaddr)
 			return -ENOENT;
 		val = (id & KVM_REG_ARM_DEMUX_VAL_MASK)
 			>> KVM_REG_ARM_DEMUX_VAL_SHIFT;
-		if (!is_valid_cache(val))
+		if (val >= CSSELR_MAX)
 			return -ENOENT;
 
 		if (get_user(newval, uval))
 			return -EFAULT;
 
-		/* This is also invariant: you can't change it. */
-		if (newval != get_ccsidr(val))
-			return -EINVAL;
-		return 0;
+		return set_ccsidr(vcpu, val, newval);
 	default:
 		return -ENOENT;
 	}
@@ -2372,7 +2486,7 @@ int kvm_arm_sys_reg_get_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg
 	void __user *uaddr = (void __user *)(unsigned long)reg->addr;
 
 	if ((reg->id & KVM_REG_ARM_COPROC_MASK) == KVM_REG_ARM_DEMUX)
-		return demux_c15_get(reg->id, uaddr);
+		return demux_c15_get(vcpu, reg->id, uaddr);
 
 	if (KVM_REG_SIZE(reg->id) != sizeof(__u64))
 		return -ENOENT;
@@ -2393,7 +2507,7 @@ int kvm_arm_sys_reg_set_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg
 	void __user *uaddr = (void __user *)(unsigned long)reg->addr;
 
 	if ((reg->id & KVM_REG_ARM_COPROC_MASK) == KVM_REG_ARM_DEMUX)
-		return demux_c15_set(reg->id, uaddr);
+		return demux_c15_set(vcpu, reg->id, uaddr);
 
 	if (KVM_REG_SIZE(reg->id) != sizeof(__u64))
 		return -ENOENT;
@@ -2410,13 +2524,7 @@ int kvm_arm_sys_reg_set_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg
 
 static unsigned int num_demux_regs(void)
 {
-	unsigned int i, count = 0;
-
-	for (i = 0; i < CSSELR_MAX; i++)
-		if (is_valid_cache(i))
-			count++;
-
-	return count;
+	return CSSELR_MAX;
 }
 
 static int write_demux_regids(u64 __user *uindices)
@@ -2426,8 +2534,6 @@ static int write_demux_regids(u64 __user *uindices)
 
 	val |= KVM_REG_ARM_DEMUX_ID_CCSIDR;
 	for (i = 0; i < CSSELR_MAX; i++) {
-		if (!is_valid_cache(i))
-			continue;
 		if (put_user(val | i, uindices))
 			return -EFAULT;
 		uindices++;
@@ -2556,7 +2662,6 @@ static int check_sysreg_table(const struct sys_reg_desc *table, unsigned int n)
 void kvm_sys_reg_table_init(void)
 {
 	unsigned int i;
-	struct sys_reg_desc clidr;
 
 	/* Make sure tables are unique and in order. */
 	BUG_ON(check_sysreg_table(sys_reg_descs, ARRAY_SIZE(sys_reg_descs)));
@@ -2569,24 +2674,6 @@ void kvm_sys_reg_table_init(void)
 	/* We abuse the reset function to overwrite the table itself. */
 	for (i = 0; i < ARRAY_SIZE(invariant_sys_regs); i++)
 		invariant_sys_regs[i].reset(NULL, &invariant_sys_regs[i]);
-
-	/*
-	 * CLIDR format is awkward, so clean it up.  See ARM B4.1.20:
-	 *
-	 *   If software reads the Cache Type fields from Ctype1
-	 *   upwards, once it has seen a value of 0b000, no caches
-	 *   exist at further-out levels of the hierarchy. So, for
-	 *   example, if Ctype3 is the first Cache Type field with a
-	 *   value of 0b000, the values of Ctype4 to Ctype7 must be
-	 *   ignored.
-	 */
-	get_clidr_el1(NULL, &clidr); /* Ugly... */
-	cache_levels = clidr.val;
-	for (i = 0; i < 7; i++)
-		if (((cache_levels >> (i*3)) & 7) == 0)
-			break;
-	/* Clear all higher bits. */
-	cache_levels &= (1 << (i*3))-1;
 }
 
 /**
